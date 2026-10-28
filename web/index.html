@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Viet Voice Studio</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<header><div class="brand">V<span>•</span></div><div><h1>Viet Voice Studio</h1><p>Video tiếng Hàn → thuyết minh tiếng Việt · Local GPU</p></div><span class="badge">RTX · 8 GB</span></header>
+<main>
+<aside><section class="upload"><h2>Thêm video</h2><p>Chọn video có lời thoại tiếng Hàn. Hệ thống sử dụng track audio đầu tiên.</p><input type="file" id="file" accept="video/*,.mkv,.mov,.webm"><button id="upload">Tải lên & vào hàng đợi</button><progress id="uploadProgress" max="100" value="0" hidden></progress></section><h2>Dự án</h2><div id="projects"></div></aside>
+<article id="workspace"><div class="empty"><span>◉</span><h2>Từ lời thoại đến giọng Việt</h2><p>Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.</p></div></article>
+</main><div id="toast" role="status"></div><script src="/static/app.js" defer></script>
+</body></html>
