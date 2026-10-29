@@ -339,6 +339,9 @@ class ApiTests(unittest.TestCase):
         from app.media import build_ducking_filter
         f_duck = build_ducking_filter(0.3, 1.2, ducking=True, attenuation=18.0)
         self.assertIn('sidechaincompress', f_duck)
+        self.assertIn('asplit=2', f_duck)
+        self.assertIn('narr_sc', f_duck)
+        self.assertIn('narr_mix', f_duck)
         self.assertIn('volume=0.300', f_duck)
         self.assertIn('volume=1.200', f_duck)
 

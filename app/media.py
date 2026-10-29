@@ -147,9 +147,9 @@ def build_ducking_filter(bg_gain=0.25, narr_gain=1.0, ducking=True, attenuation=
     if ducking:
         return (
             f"[0:a]volume={bg_gain:.3f}[bg];"
-            f"[1:a]pan=stereo|c0=c0|c1=c0,volume={narr_gain:.3f}[narr];"
-            f"[bg][narr]sidechaincompress=threshold=0.02:ratio={ratio:.1f}:attack=25:release=280[ducked_bg];"
-            f"[ducked_bg][narr]amix=inputs=2:duration=first:dropout_transition=2:weights=1 1,alimiter=limit=0.98[out]"
+            f"[1:a]pan=stereo|c0=c0|c1=c0,volume={narr_gain:.3f},asplit=2[narr_sc][narr_mix];"
+            f"[bg][narr_sc]sidechaincompress=threshold=0.02:ratio={ratio:.1f}:attack=25:release=280[ducked_bg];"
+            f"[ducked_bg][narr_mix]amix=inputs=2:duration=first:dropout_transition=2:weights=1 1,alimiter=limit=0.98[out]"
         )
     else:
         return (
