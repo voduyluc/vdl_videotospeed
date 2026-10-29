@@ -293,6 +293,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r_mp3.status_code, 200)
         self.assertIn('movie_thuyet_minh.mp3', r_mp3.headers.get('content-disposition', ''))
 
+        # Test non-latin1 / Vietnamese accented filename encoding (RFC 5987)
+        r_vn = self.client.post('/api/projects', files={'file': ('cất_cánh_hướng_dẫn.mp4', b'video', 'video/mp4')})
+        self.assertEqual(r_vn.status_code, 200)
+        pid_vn = r_vn.json()['id']
+        (core.folder(pid_vn) / 'mixed.mp3').write_bytes(b'fake-mp3-bytes')
+        r_vn_dl = self.client.get(f'/api/projects/{pid_vn}/files/mixed.mp3')
+        self.assertEqual(r_vn_dl.status_code, 200)
+        cd_hdr = r_vn_dl.headers.get('content-disposition', '')
+        # Verify latin-1 encodeability without exception
+        cd_hdr.encode('latin-1')
+        self.assertIn("filename*=UTF-8''", cd_hdr)
+        self.assertIn('cat_canh', cd_hdr)
+
     def test_ui_language_switcher_and_static_assets(self):
         res = self.client.get('/')
         self.assertEqual(res.status_code, 200)

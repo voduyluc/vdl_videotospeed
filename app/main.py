@@ -1,9 +1,12 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import shutil
 import time
+import unicodedata
+import urllib.parse
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
@@ -422,7 +425,6 @@ def delete_project(pid: str):
 
 
 def get_download_filename(project_name: str, export_name: str, src_lang: str = 'ko') -> str:
-    import re
     stem = Path(project_name or 'video').stem
     stem = re.sub(r'[\r\n\t"\'\\/]+', '_', stem).strip() or 'video'
     suffixes = {
@@ -437,6 +439,15 @@ def get_download_filename(project_name: str, export_name: str, src_lang: str = '
         'ja.srt': f'{stem}_ja.srt',
     }
     return suffixes.get(export_name, f'{stem}_{export_name}')
+
+
+def make_content_disposition(filename: str, disposition: str = 'attachment') -> str:
+    nfkd = unicodedata.normalize('NFKD', filename)
+    ascii_name = re.sub(r'[^\w\.-]+', '_', nfkd.encode('ASCII', 'ignore').decode('ASCII')).strip('_')
+    if not ascii_name:
+        ascii_name = 'download'
+    quoted_utf8 = urllib.parse.quote(filename, safe='.-_')
+    return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted_utf8}"
 
 
 @app.get('/api/projects/{pid}/files/{name}')
@@ -455,13 +466,13 @@ def asset(pid: str, name: str):
         key = 'translation' if name == 'vi.srt' else 'source'
         return Response(subtitles(segments, key),
                         media_type='application/x-subrip; charset=utf-8',
-                        headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
+                        headers={'Content-Disposition': make_content_disposition(dl_name)})
     if not path.exists():
         raise HTTPException(404)
     is_video = (name in ('source', 'dubbed_video.mp4'))
+    headers = None if name == 'source' else {'Content-Disposition': make_content_disposition(dl_name)}
     return FileResponse(path, media_type='video/mp4' if is_video else None,
-                        filename=None if name == 'source' else dl_name,
-                        headers=None if name == 'source' else {'Content-Disposition': f'attachment; filename="{dl_name}"'})
+                        headers=headers)
 
 
 @app.get('/api/projects/{pid}/mix/preview')
