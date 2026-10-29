@@ -116,8 +116,8 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     init_db()
-    pipeline_steps = ['extract', 'stt', 'translate', 'tts', 'export', 'mix']
-    step_order = {'extract': 0, 'stt': 1, 'translate': 2, 'condense': 3, 'tts': 4, 'export': 5, 'mix': 6}
+    pipeline_steps = ['extract', 'stt', 'translate', 'tts', 'export', 'mix', 'mux']
+    step_order = {'extract': 0, 'stt': 1, 'translate': 2, 'condense': 3, 'tts': 4, 'export': 5, 'mix': 6, 'mux': 7}
     while not stopping:
         with db() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM projects WHERE state='queued' ORDER BY created")]
@@ -161,6 +161,18 @@ def main():
                             c.execute('UPDATE voices SET preview_path=? WHERE id=?', (str(dest), row['voice']))
                 update(pid, state='completed', completed_at=time.time(), progress='Đã tạo xong câu nghe thử')
             elif step == 'mix':
+                with db() as c:
+                    r = c.execute('SELECT mux_video, pause_before_mux FROM projects WHERE id=?', (pid,)).fetchone()
+                mux_flag = r['mux_video'] if r and 'mux_video' in r.keys() else 1
+                pause_mux = r['pause_before_mux'] if r and 'pause_before_mux' in r.keys() else 1
+                if mux_flag:
+                    if pause_mux:
+                        update(pid, state='review', step='mux', progress='Chờ nghe thử audio trước khi ghép video')
+                    else:
+                        update(pid, state='queued', step='mux', progress='Tự động ghép vào video')
+                else:
+                    update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
+            elif step == 'mux':
                 update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
             elif step in pipeline_steps and pipeline_steps.index(step) + 1 < len(pipeline_steps):
                 next_step = pipeline_steps[pipeline_steps.index(step) + 1]

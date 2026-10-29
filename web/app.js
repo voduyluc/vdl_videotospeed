@@ -79,7 +79,9 @@ const I18N = {
     stepTTS: "4. Tạo giọng TTS",
     stepExport: "5. Ghép lời thoại",
     stepMix: "6. Phối âm nền",
+    stepMux: "7. Ghép video",
     descReview: "Dịch xong · Đang dừng để bạn duyệt bản dịch",
+    descReviewAudioBeforeMux: "Phối âm xong · Hãy nghe thử audio trước khi bấm ghép vào video",
     descCompleted: "Hoàn tất toàn bộ tiến trình · Đã tạo xong file",
     descProcessing: "Đang xử lý: {0} {1} - {2}%",
     descPercentDone: "{0}% hoàn thành",
@@ -87,8 +89,23 @@ const I18N = {
     timerRemaining: "⏳ Còn ~{0} ({1})",
     timerReadyEst: "⏳ Dự kiến: ~{0}",
     timerPausedReview: "⏸️ Chờ duyệt bản dịch",
+    timerPausedReviewMux: "⏸️ Chờ nghe thử audio",
     timerElapsedTooltip: "Thời gian đã thực hiện: {0}",
     timerEstTooltip: "Dự kiến hoàn thành dựa trên khối lượng câu trích xuất: {0}",
+    muxVideoLabel: "🎬 Ghép audio vào video gốc (Thay audio gốc)",
+    muxVideoTitle: "Ghép audio thuyết minh mới vào video gốc, thay thế âm thanh cũ",
+    muxVideoHint: "Tạo file video hoàn chỉnh có hình ảnh gốc và lời thuyết minh tiếng Việt.",
+    pauseBeforeMuxLabel: "⏸️ Dừng nghe thử audio trước khi ghép vào video",
+    pauseBeforeMuxTitle: "Dừng lại sau khi phối âm để nghe thử audio trước khi ghép vào video",
+    pauseBeforeMuxHint: "Sau khi phối âm xong sẽ dừng để bạn nghe thử; ưng ý mới bấm nút ghép vào video.",
+    audioReviewBannerTitle: "🎧 Đã phối âm xong — Hãy nghe thử trước khi ghép video!",
+    audioReviewBannerDesc: "Audio thuyết minh & phối âm đã hoàn tất. Bạn có thể nghe thử ở trình phát bên dưới hoặc chỉnh âm lượng / remix. Khi ưng ý, bấm nút bên phải để xuất video hoàn chỉnh:",
+    muxVideoBtn: "Ghép vào video gốc",
+    remuxVideoBtn: "Ghép lại vào video",
+    dlDubbedVideo: "🎬 Tải Video Thuyết Minh (MP4)",
+    dlDubbedVideoDesc: "Hình ảnh gốc + âm thanh thuyết minh tiếng Việt mới",
+    badgeDubbedVideo: "🎬 Video Thuyết Minh Tiếng Việt (Audio Mới)",
+    badgeOriginalVideo: "🌐 Video Gốc",
     dlHeader: "🎉 Tải Về Kết Quả (Audio & Phụ Đề)",
     dlCompleted: "Hoàn tất 100%",
     dlMixedPlayer: "Nghe thử bản phối hoàn chỉnh (Lời Việt + Nền gốc hạ âm):",
@@ -313,7 +330,9 @@ const I18N = {
     stepTTS: "4. Voice TTS",
     stepExport: "5. Timeline Sync",
     stepMix: "6. Mix Background",
+    stepMux: "7. Merge Video",
     descReview: "Translation complete · Paused for translation review",
+    descReviewAudioBeforeMux: "Mixing complete · Preview audio before merging into video",
     descCompleted: "Pipeline finished · Output files ready",
     descProcessing: "Processing: {0} {1} - {2}%",
     descPercentDone: "{0}% completed",
@@ -321,8 +340,23 @@ const I18N = {
     timerRemaining: "⏳ ~{0} left ({1})",
     timerReadyEst: "⏳ Est: ~{0}",
     timerPausedReview: "⏸️ Waiting for review",
+    timerPausedReviewMux: "⏸️ Waiting for audio preview",
     timerElapsedTooltip: "Elapsed time: {0}",
     timerEstTooltip: "Estimated completion based on segment workload: {0}",
+    muxVideoLabel: "🎬 Merge audio into original video (Replace original audio)",
+    muxVideoTitle: "Mux new dubbed audio track into original video, replacing old audio",
+    muxVideoHint: "Produces complete dubbed MP4 video with original visuals and Vietnamese audio.",
+    pauseBeforeMuxLabel: "⏸️ Pause to listen to audio before merging into video",
+    pauseBeforeMuxTitle: "Pause after audio mixing to preview audio before muxing video",
+    pauseBeforeMuxHint: "Stops after mixing so you can preview audio; click merge when satisfied.",
+    audioReviewBannerTitle: "🎧 Mixing complete — Preview audio before merging video!",
+    audioReviewBannerDesc: "Audio narration and mixing are ready. Listen below or adjust volumes. When ready, click \"Merge into Video\" to produce the final video:",
+    muxVideoBtn: "Merge into Video",
+    remuxVideoBtn: "Re-merge Video",
+    dlDubbedVideo: "🎬 Download Dubbed Video (MP4)",
+    dlDubbedVideoDesc: "Original video visuals + new Vietnamese dubbed audio",
+    badgeDubbedVideo: "🎬 Vietnamese Dubbed Video (New Audio)",
+    badgeOriginalVideo: "🌐 Original Video",
     dlHeader: "🎉 Download Results (Audio & Subtitles)",
     dlCompleted: "100% Completed",
     dlMixedPlayer: "Preview mixed audio (Vietnamese + Ducked background):",
@@ -943,12 +977,14 @@ function estimateRemainingSeconds(p){
   // - TTS: VieNeu v3turbo GPU speech synthesis takes ~0.30s per segment
   // - Export: FFmpeg sync & loudnorm ~5s
   // - Mix: FFmpeg sidechain ducking & mix ~ max(5s, round(dur / 30))
+  // - Mux Video: FFmpeg stream copy ~3s
   const T_EXTRACT = 3;
   const T_STT_TOTAL = Math.round(dur * 0.14);
   const T_TRANSLATE_PER_SEG = 0.65;
   const T_TTS_PER_SEG = 0.30;
   const T_EXPORT = 5;
   const T_MIX = Math.max(5, Math.round(dur / 30));
+  const T_MUX = (p.mux_video !== 0) ? 3 : 0;
 
   const step = p.step || 'extract';
   let rem = 0;
@@ -969,7 +1005,7 @@ function estimateRemainingSeconds(p){
 
   if(step === 'extract'){
     const remExtract = (p.state === 'running') ? 1.5 : T_EXTRACT;
-    rem = remExtract + T_STT_TOTAL + (totalSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX;
+    rem = remExtract + T_STT_TOTAL + (totalSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX + T_MUX;
   } else if(step === 'stt'){
     let remSTT = T_STT_TOTAL;
     if(curStepTotal > 0 && curStepCount >= 0){
@@ -978,24 +1014,26 @@ function estimateRemainingSeconds(p){
     } else if(curStepRatio > 0){
       remSTT = Math.max(5, Math.round(T_STT_TOTAL * (1 - curStepRatio)));
     }
-    rem = remSTT + (totalSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX;
+    rem = remSTT + (totalSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX + T_MUX;
   } else if(step === 'translate' || step === 'condense'){
     let remSegs = totalSegs;
     if(curStepTotal > 0 && curStepCount >= 0){
       remSegs = Math.max(0, curStepTotal - curStepCount);
     }
-    rem = (remSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX;
+    rem = (remSegs * T_TRANSLATE_PER_SEG) + (totalSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX + T_MUX;
   } else if(step === 'tts'){
     let remSegs = totalSegs;
     if(curStepTotal > 0 && curStepCount >= 0){
       remSegs = Math.max(0, curStepTotal - curStepCount);
     }
-    rem = (remSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX;
+    rem = (remSegs * T_TTS_PER_SEG) + T_EXPORT + T_MIX + T_MUX;
   } else if(step === 'export'){
     const remExport = (curStepRatio > 0) ? Math.max(1, Math.round(T_EXPORT * (1 - curStepRatio))) : T_EXPORT;
-    rem = remExport + T_MIX;
+    rem = remExport + T_MIX + T_MUX;
   } else if(step === 'mix'){
-    rem = (p.state === 'running') ? 4 : T_MIX;
+    rem = ((p.state === 'running') ? 4 : T_MIX) + T_MUX;
+  } else if(step === 'mux'){
+    rem = (p.state === 'running') ? 2 : 3;
   } else {
     rem = 5;
   }
@@ -1038,7 +1076,7 @@ function updateLiveTiming(){
   } else if(state === 'review'){
     etaEl.style.display = 'inline-flex';
     etaEl.className = 'pipeline-eta';
-    etaEl.textContent = t('timerPausedReview');
+    etaEl.textContent = (p.step === 'mux') ? t('timerPausedReviewMux') : t('timerPausedReview');
     etaEl.title = '';
   } else if(state === 'failed' || state === 'cancelled'){
     etaEl.style.display = 'none';
@@ -1072,6 +1110,9 @@ function renderPipeline(p){
     {key:'export',name:t('stepExport')},
     {key:'mix',name:t('stepMix')}
   ];
+  if(p.mux_video !== 0){
+    steps.push({key:'mux',name:t('stepMux')});
+  }
   const keys=steps.map(s=>s.key);
   const currentIdx=keys.indexOf(p.step);
   const state=p.state;
@@ -1081,12 +1122,13 @@ function renderPipeline(p){
   if(match){
     const cur=parseInt(match[1],10),tot=parseInt(match[2],10);
     if(tot>0)stagePct=Math.min(100,Math.round((cur/tot)*100));
-  }else if(state==='running'&&p.step==='extract'){
+  }else if(state==='running'&&(p.step==='extract'||p.step==='mux')){
     stagePct=50;
   }else if(state==='completed'){
     stagePct=100;
   }
 
+  const totalSteps=steps.length;
   let overallPct=0;
   if(state==='completed'){
     overallPct=100;
@@ -1094,9 +1136,13 @@ function renderPipeline(p){
     overallPct=0;
   }else if(currentIdx>=0){
     if(state==='review'){
-      overallPct=50;
+      if(p.step === 'mux'){
+        overallPct = Math.round(((totalSteps - 1) / totalSteps) * 100);
+      } else {
+        overallPct = Math.round((2 / totalSteps) * 100);
+      }
     }else{
-      overallPct=Math.min(99,Math.round(currentIdx*(100/6)+stagePct*(1/6)));
+      overallPct=Math.min(99,Math.round(currentIdx*(100/totalSteps)+stagePct*(1/totalSteps)));
     }
   }
 
@@ -1149,7 +1195,7 @@ function renderPipeline(p){
   const statusRow=el('div',undefined,'pipeline-status');
   let detailDesc=p.progress||getStatusLabel(state)||state;
   if(state==='review'){
-    detailDesc=t('descReview');
+    detailDesc=(p.step === 'mux') ? t('descReviewAudioBeforeMux') : t('descReview');
   }else if(state==='completed'){
     detailDesc=t('descCompleted');
   }else if(state==='running'){
@@ -1190,12 +1236,38 @@ function renderDownloadSection(p){
     return null;
   }
 
+  const container = el('div', undefined, 'download-section-container');
+  if(p.state === 'review' && p.step === 'mux'){
+    const banner = el('div', undefined, 'audio-review-banner');
+    const bContent = el('div', undefined, 'audio-review-content');
+    bContent.append(
+      el('div', t('audioReviewBannerTitle'), 'audio-review-title'),
+      el('div', t('audioReviewBannerDesc'), 'audio-review-desc')
+    );
+    const muxBtn = el('button', '🎬 ' + t('muxVideoBtn'), 'btn-mux-action');
+    muxBtn.onclick = () => act('mux');
+    banner.append(bContent, muxBtn);
+    container.append(banner);
+  }
+
   const card = el('div', undefined, 'download-card');
   const header = el('div', undefined, 'download-header');
-  header.append(el('h3', t('dlHeader')));
+  const hLeft = el('div', undefined, 'download-header-left');
+  hLeft.append(el('h3', t('dlHeader')));
   if(p.state === 'completed'){
-    header.append(el('span', t('dlCompleted'), 'badge-completed'));
+    hLeft.append(el('span', t('dlCompleted'), 'badge-completed'));
   }
+  header.append(hLeft);
+
+  const hasDubbed = p.exports.includes('dubbed_video.mp4');
+  const hActions = el('div', undefined, 'download-header-actions');
+  const muxActionBtn = el('button', '🎬 ' + (hasDubbed ? t('remuxVideoBtn') : t('muxVideoBtn')), hasDubbed ? 'secondary' : 'btn-mux-action');
+  muxActionBtn.style.fontSize = '12px';
+  muxActionBtn.style.padding = '6px 14px';
+  muxActionBtn.onclick = () => act('mux');
+  hActions.append(muxActionBtn);
+  header.append(hActions);
+
   card.append(header);
 
   const playFile = p.exports.includes('mixed.mp3') ? 'mixed.mp3' :
@@ -1220,7 +1292,8 @@ function renderDownloadSection(p){
   const srcLabel = t('lang_' + srcLang) || srcLang.toUpperCase();
 
   const meta = {
-    'mixed.mp3': { label: t('dlMixedMp3'), primary: true, desc: t('dlMixedMp3Desc'), dlName: `${stem}_mixed.mp3` },
+    'dubbed_video.mp4': { label: t('dlDubbedVideo'), primary: true, desc: t('dlDubbedVideoDesc'), dlName: `${stem}_thuyet_minh.mp4` },
+    'mixed.mp3': { label: t('dlMixedMp3'), primary: !hasDubbed, desc: t('dlMixedMp3Desc'), dlName: `${stem}_mixed.mp3` },
     'mixed.wav': { label: t('dlMixedWav'), primary: false, desc: t('dlMixedWavDesc'), dlName: `${stem}_mixed.wav` },
     'narration.mp3': { label: t('dlNarrMp3'), primary: false, desc: t('dlNarrMp3Desc'), dlName: `${stem}_thuyet_minh.mp3` },
     'narration.wav': { label: t('dlNarrWav'), primary: false, desc: t('dlNarrWavDesc'), dlName: `${stem}_thuyet_minh.wav` },
@@ -1231,7 +1304,7 @@ function renderDownloadSection(p){
     'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ja.srt` }
   };
 
-  const order = ['mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt'];
+  const order = ['dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt'];
   const sorted = [...p.exports].sort((a,b) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);
@@ -1253,7 +1326,8 @@ function renderDownloadSection(p){
   }
 
   card.append(btnGroup);
-  return card;
+  container.append(card);
+  return container;
 }
 
 function renderMixQuickBar(p){
@@ -1390,10 +1464,25 @@ function render(){
   const metaP = el('p', t('segmentsCountMeta', p.progress||getStatusLabel(p.state), p.segments.length, time(p.duration)));
   metaP.id = 'segmentsMeta';
   w.append(metaP);
-  const video=el('video');video.controls=true;video.preload='metadata';video.src=`/api/projects/${p.id}/files/source`;w.append(video);
+  const hasDubbedVideo = p.exports && p.exports.includes('dubbed_video.mp4');
+  if(hasDubbedVideo){
+    const videoPill = el('div', undefined, 'video-badge-dubbed');
+    videoPill.innerHTML = t('badgeDubbedVideo');
+    w.append(videoPill);
+  }
+  const video=el('video');
+  video.controls=true;
+  video.preload='metadata';
+  video.src = hasDubbedVideo ? `/api/projects/${p.id}/files/dubbed_video.mp4` : `/api/projects/${p.id}/files/source`;
+  w.append(video);
   if(p.error)w.append(el('pre',p.error,'error'));
 
   const actBar=el('div',undefined,'toolbar');
+  if(p.state === 'review' && p.step === 'mux'){
+    const muxBtn=el('button', '🎬 ' + t('muxVideoBtn'), 'primary btn-mux-action');
+    muxBtn.onclick=()=>act('mux');
+    actBar.append(muxBtn);
+  }
   const editable=['review','failed','completed'].includes(p.state);
   if(editable&&p.segments.length){
     const saveButton=el('button',t('saveTranslationBtn'),'secondary');
@@ -1716,6 +1805,14 @@ function initProjectModal() {
   if (narrRange) narrRange.oninput = () => { $('#modalNarrVal').textContent = `${narrRange.value}%`; };
   if (attenRange) attenRange.oninput = () => { $('#modalAttenVal').textContent = `-${attenRange.value} dB`; };
 
+  const muxVideoCb = $('#modalMuxVideo');
+  if (muxVideoCb) {
+    muxVideoCb.onchange = () => {
+      const group = $('#modalPauseBeforeMuxGroup');
+      if (group) group.style.display = muxVideoCb.checked ? 'block' : 'none';
+    };
+  }
+
   if (multiCb) {
     multiCb.onchange = () => {
       const isMulti = multiCb.checked;
@@ -1800,6 +1897,9 @@ async function openProjectModal(mode, p = null) {
     $('#modalPauseReview').checked = true;
     $('#modalFitDuration').checked = true;
     $('#modalAutoFit').checked = true;
+    $('#modalMuxVideo').checked = true;
+    $('#modalPauseBeforeMux').checked = true;
+    if ($('#modalPauseBeforeMuxGroup')) $('#modalPauseBeforeMuxGroup').style.display = 'block';
 
     $('#modalMixDucking').checked = true;
     $('#modalBgRange').value = 25;
@@ -1834,6 +1934,10 @@ async function openProjectModal(mode, p = null) {
     $('#modalPauseReview').checked = (p.pause_review !== 0);
     $('#modalFitDuration').checked = (p.fit_duration !== 0);
     $('#modalAutoFit').checked = (p.auto_fit !== 0);
+    const muxFlag = (p.mux_video !== 0);
+    $('#modalMuxVideo').checked = muxFlag;
+    $('#modalPauseBeforeMux').checked = (p.pause_before_mux !== 0);
+    if ($('#modalPauseBeforeMuxGroup')) $('#modalPauseBeforeMuxGroup').style.display = muxFlag ? 'block' : 'none';
 
     $('#modalMixDucking').checked = (p.mix_ducking !== 0);
     const bg = Math.round((p.mix_background_gain ?? 0.25) * 100);
@@ -1865,6 +1969,8 @@ async function handleModalSubmit() {
   const pauseReview = $('#modalPauseReview').checked;
   const fitDuration = $('#modalFitDuration').checked;
   const autoFit = $('#modalAutoFit').checked;
+  const muxVideo = $('#modalMuxVideo').checked ? 1 : 0;
+  const pauseBeforeMux = $('#modalPauseBeforeMux').checked ? 1 : 0;
   const mixDucking = $('#modalMixDucking').checked ? 1 : 0;
   const mixBg = parseFloat($('#modalBgRange').value) / 100.0;
   const mixNarr = parseFloat($('#modalNarrRange').value) / 100.0;
@@ -1888,6 +1994,8 @@ async function handleModalSubmit() {
     form.append('pause_review', pauseReview ? '1' : '0');
     form.append('fit_duration', fitDuration ? '1' : '0');
     form.append('auto_fit', autoFit ? '1' : '0');
+    form.append('mux_video', String(muxVideo));
+    form.append('pause_before_mux', String(pauseBeforeMux));
     form.append('mix_ducking', String(mixDucking));
     form.append('mix_background_gain', String(mixBg));
     form.append('mix_narration_gain', String(mixNarr));
@@ -1940,7 +2048,9 @@ async function handleModalSubmit() {
         mix_ducking: mixDucking,
         mix_background_gain: mixBg,
         mix_narration_gain: mixNarr,
-        mix_ducking_attenuation: mixAtten
+        mix_ducking_attenuation: mixAtten,
+        mux_video: muxVideo,
+        pause_before_mux: pauseBeforeMux
       };
       await api(`/projects/${editingProjectId}/settings`, {
         method: 'PATCH',

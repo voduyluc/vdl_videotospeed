@@ -221,3 +221,56 @@ def render_mix_preview(pid, start_sec=0.0, duration_sec=15.0):
          '-filter_complex', filter_str,
          '-map', '[out]', '-ar', '48000', '-c:a', 'pcm_s16le', preview_out])
     return preview_out
+
+
+def mux(pid: str):
+    p = folder(pid)
+    source_video = p / 'source'
+    if not source_video.exists():
+        raise RuntimeError('File video gốc không tồn tại')
+
+    # Priority for audio track: mixed.wav (lossless) -> mixed.mp3 -> narration.wav -> narration.mp3
+    audio_path = None
+    for name in ('mixed.wav', 'mixed.mp3', 'narration.wav', 'narration.mp3'):
+        f = p / name
+        if f.exists() and f.stat().st_size > 0:
+            audio_path = f
+            break
+
+    if not audio_path:
+        raise RuntimeError('Chưa có file audio thuyết minh/phối âm để ghép vào video')
+
+    update(pid, progress='Ghép audio vào video gốc (FFmpeg)')
+    tmp_out = p / 'dubbed_video.tmp.mp4'
+    final_out = p / 'dubbed_video.mp4'
+    tmp_out.unlink(missing_ok=True)
+
+    # 1. Fast stream copy for video track (-c:v copy)
+    try:
+        run(['ffmpeg', '-nostdin', '-y', '-v', 'error',
+             '-i', source_video,
+             '-i', audio_path,
+             '-map', '0:v:0',
+             '-map', '1:a:0',
+             '-c:v', 'copy',
+             '-c:a', 'aac', '-b:a', '192k',
+             '-movflags', '+faststart',
+             '-shortest',
+             tmp_out])
+    except Exception:
+        # Fallback: re-encode video with fast libx264 if stream copy fails
+        tmp_out.unlink(missing_ok=True)
+        run(['ffmpeg', '-nostdin', '-y', '-v', 'error',
+             '-i', source_video,
+             '-i', audio_path,
+             '-map', '0:v:0',
+             '-map', '1:a:0',
+             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22',
+             '-c:a', 'aac', '-b:a', '192k',
+             '-movflags', '+faststart',
+             '-shortest',
+             tmp_out])
+
+    tmp_out.replace(final_out)
+    update(pid, progress='Đã ghép xong video')
+    return final_out

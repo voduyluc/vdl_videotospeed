@@ -118,7 +118,8 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
            fit_duration: int = Form(1), multi_speaker: int = Form(0),
            voice_male: str = Form(None), voice_female: str = Form(None),
            mix_background_gain: float = Form(0.25), mix_narration_gain: float = Form(1.0),
-           mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0)):
+           mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0),
+           mux_video: int = Form(1), pause_before_mux: int = Form(1)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
@@ -130,6 +131,8 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
     auto_fit_flag = 1 if int(auto_fit) else 0
     fit_flag = 1 if int(fit_duration) else 0
     multi_flag = 1 if int(multi_speaker) else 0
+    mux_video_flag = 1 if int(mux_video) else 0
+    pause_mux_flag = 1 if int(pause_before_mux) else 0
     src_lang = (source_language or 'ko').strip().lower()
     if src_lang not in SUPPORTED_LANGUAGES:
         raise HTTPException(400, f'Ngôn ngữ nguồn không hợp lệ. Chỉ hỗ trợ: {", ".join(SUPPORTED_LANGUAGES)}')
@@ -150,11 +153,13 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
             now_ts = time.time()
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
                         source_language,fit_duration,multi_speaker,voice_male,voice_female,
-                        mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at,
+                        mux_video,pause_before_mux)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', now_ts,
                        selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
-                       multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts))
+                       multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts,
+                       mux_video_flag, pause_mux_flag))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -170,11 +175,13 @@ def detail(pid: str):
     result['source_language'] = src_lang
     result['fit_duration'] = result.get('fit_duration', 1)
     result['multi_speaker'] = result.get('multi_speaker', 0)
+    result['mux_video'] = result.get('mux_video', 1)
+    result['pause_before_mux'] = result.get('pause_before_mux', 1)
     result['voice_male'] = result.get('voice_male', 'Hải Đăng')
     result['voice_female'] = result.get('voice_female', 'Mai Anh')
     result['segments'] = read_json(folder(pid) / 'segments.json', [])
     result['warnings'] = read_json(folder(pid) / 'timing-warnings.json', [])
-    result['exports'] = [n for n in ('mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', f'{src_lang}.srt', 'vi.srt')
+    result['exports'] = [n for n in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', f'{src_lang}.srt', 'vi.srt')
                          if (folder(pid) / n).exists()]
     if result['segments']:
         for name in (f'{src_lang}.srt', 'vi.srt'):
@@ -213,7 +220,7 @@ def edit(pid: str, body: Edit):
             raise HTTPException(400, 'Invalid or overlapping timeline')
         previous_end = s.end
     write_json(folder(pid) / 'segments.json', [s.model_dump() for s in body.segments])
-    for name in ('narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt'):
+    for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt'):
         (folder(pid) / name).unlink(missing_ok=True)
     update(pid, state='review', step='tts', voice=body.voice, error=None)
     return {'ok': True}
@@ -232,6 +239,8 @@ class ProjectSettings(BaseModel):
     mix_narration_gain: float | None = None
     mix_ducking: bool | int | None = None
     mix_ducking_attenuation: float | None = None
+    mux_video: bool | int | None = None
+    pause_before_mux: bool | int | None = None
 
 
 @app.patch('/api/projects/{pid}/settings')
@@ -269,6 +278,10 @@ def update_settings(pid: str, body: ProjectSettings):
         values['mix_ducking'] = 1 if body.mix_ducking else 0
     if body.mix_ducking_attenuation is not None:
         values['mix_ducking_attenuation'] = max(2.0, min(30.0, float(body.mix_ducking_attenuation)))
+    if body.mux_video is not None:
+        values['mux_video'] = 1 if body.mux_video else 0
+    if body.pause_before_mux is not None:
+        values['pause_before_mux'] = 1 if body.pause_before_mux else 0
     if values:
         update(pid, **values)
     return {'ok': True}
@@ -323,7 +336,14 @@ def action(pid: str, action: str):
     if action == 'remix':
         if not (folder(pid) / 'narration.wav').exists():
             raise HTTPException(409, 'Cần tạo audio thuyết minh trước khi phối âm')
+        (folder(pid) / 'dubbed_video.mp4').unlink(missing_ok=True)
         update(pid, state='queued', step='mix', cancel=0, error=None, completed_at=None, progress='Đang chờ phối âm')
+        return {'ok': True}
+    if action == 'mux':
+        has_audio = any((folder(pid) / f).exists() for f in ('mixed.wav', 'mixed.mp3', 'narration.wav', 'narration.mp3'))
+        if not has_audio:
+            raise HTTPException(409, 'Cần có audio thuyết minh/phối âm trước khi ghép vào video')
+        update(pid, state='queued', step='mux', cancel=0, error=None, completed_at=None, progress='Đang chờ ghép vào video')
         return {'ok': True}
     if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled'):
         raise HTTPException(409, 'Action unavailable')
@@ -362,6 +382,7 @@ def get_download_filename(project_name: str, export_name: str, src_lang: str = '
     stem = Path(project_name or 'video').stem
     stem = re.sub(r'[\r\n\t"\'\\/]+', '_', stem).strip() or 'video'
     suffixes = {
+        'dubbed_video.mp4': f'{stem}_thuyet_minh.mp4',
         'mixed.mp3': f'{stem}_mixed.mp3',
         'mixed.wav': f'{stem}_mixed.wav',
         'narration.mp3': f'{stem}_thuyet_minh.mp3',
@@ -378,7 +399,7 @@ def get_download_filename(project_name: str, export_name: str, src_lang: str = '
 def asset(pid: str, name: str):
     row = project(pid)
     src_lang = row.get('source_language') or 'ko'
-    allowed = ('source', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'vi.srt', f'{src_lang}.srt', 'ko.srt', 'en.srt', 'ja.srt')
+    allowed = ('source', 'dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'vi.srt', f'{src_lang}.srt', 'ko.srt', 'en.srt', 'ja.srt')
     if name not in allowed:
         raise HTTPException(404)
     path = folder(pid) / name
@@ -393,7 +414,8 @@ def asset(pid: str, name: str):
                         headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
     if not path.exists():
         raise HTTPException(404)
-    return FileResponse(path, media_type='video/mp4' if name == 'source' else None,
+    is_video = (name in ('source', 'dubbed_video.mp4'))
+    return FileResponse(path, media_type='video/mp4' if is_video else None,
                         filename=None if name == 'source' else dl_name,
                         headers=None if name == 'source' else {'Content-Disposition': f'attachment; filename="{dl_name}"'})
 

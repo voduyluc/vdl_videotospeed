@@ -44,7 +44,9 @@ def init_db():
             fit_duration INTEGER DEFAULT 1,
             multi_speaker INTEGER DEFAULT 0,
             voice_male TEXT DEFAULT 'Hải Đăng',
-            voice_female TEXT DEFAULT 'Mai Anh')''')
+            voice_female TEXT DEFAULT 'Mai Anh',
+            mux_video INTEGER DEFAULT 1,
+            pause_before_mux INTEGER DEFAULT 1)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
@@ -72,6 +74,10 @@ def init_db():
             c.execute('ALTER TABLE projects ADD COLUMN started_at REAL')
         if 'completed_at' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN completed_at REAL')
+        if 'mux_video' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN mux_video INTEGER DEFAULT 1')
+        if 'pause_before_mux' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN pause_before_mux INTEGER DEFAULT 1')
         c.execute('''CREATE TABLE IF NOT EXISTS voices (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL NOT NULL,
             sample_file TEXT NOT NULL, version TEXT NOT NULL,

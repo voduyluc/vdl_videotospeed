@@ -9,5 +9,5 @@ if __name__ == '__main__':
         from app.translate import condense
         condense(pid)
     else:
-        from app.media import extract, export, mix
-        {'extract': extract, 'export': export, 'mix': mix}[step](pid)
+        from app.media import extract, export, mix, mux
+        {'extract': extract, 'export': export, 'mix': mix, 'mux': mux}[step](pid)

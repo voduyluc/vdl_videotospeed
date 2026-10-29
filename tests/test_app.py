@@ -214,6 +214,32 @@ class ApiTests(unittest.TestCase):
         self.assertIsNotNone(proj_started.get('started_at'))
         self.assertIsInstance(proj_started['started_at'], (int, float))
 
+    def test_mux_video_settings_and_action(self):
+        pid = self.create()
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj.get('mux_video'), 1)
+        self.assertEqual(proj.get('pause_before_mux'), 1)
+
+        # Update settings
+        r_patch = self.client.patch(f'/api/projects/{pid}/settings', json={'mux_video': 0, 'pause_before_mux': 0})
+        self.assertEqual(r_patch.status_code, 200)
+        proj_updated = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_updated.get('mux_video'), 0)
+        self.assertEqual(proj_updated.get('pause_before_mux'), 0)
+
+        # Action mux when no audio file exists -> 409
+        r_mux_fail = self.client.post(f'/api/projects/{pid}/mux')
+        self.assertEqual(r_mux_fail.status_code, 409)
+
+        # Create dummy mixed.wav
+        p_dir = core.folder(pid)
+        (p_dir / 'mixed.wav').write_bytes(b'dummy wav')
+        r_mux_ok = self.client.post(f'/api/projects/{pid}/mux')
+        self.assertEqual(r_mux_ok.status_code, 200)
+        proj_muxing = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_muxing['step'], 'mux')
+        self.assertEqual(proj_muxing['state'], 'queued')
+
     def test_empty_translation_cannot_generate(self):
         pid = self.create()
         segments = self.review(pid)
@@ -749,6 +775,30 @@ class PipelineTests(unittest.TestCase):
 
     def test_path_validation(self):
         with self.assertRaises(ValueError): core.folder('../escape')
+
+    def test_media_mux_creates_dubbed_video(self):
+        from unittest.mock import patch
+        from app.media import mux
+        pid = 'f' * 32
+        p_dir = core.folder(pid)
+        p_dir.mkdir(parents=True, exist_ok=True)
+        (p_dir / 'source').write_bytes(b'dummy video')
+        (p_dir / 'mixed.wav').write_bytes(b'dummy mixed wav')
+
+        called_cmds = []
+        def fake_run(cmd):
+            called_cmds.append(cmd)
+            # Create the expected tmp output
+            out_file = Path(cmd[-1])
+            out_file.write_bytes(b'dubbed video result')
+
+        with patch('app.media.run', fake_run):
+            mux(pid)
+
+        self.assertTrue((p_dir / 'dubbed_video.mp4').exists())
+        self.assertTrue(len(called_cmds) > 0)
+        self.assertIn('-c:v', called_cmds[0])
+        self.assertIn('copy', called_cmds[0])
 
 
 if __name__ == '__main__':

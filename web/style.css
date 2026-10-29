@@ -50,6 +50,13 @@
 
 /* Download Section */
 .download-card{background:linear-gradient(180deg,#1e2720,#161e19);border:2px solid var(--accent);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 4px 24px rgba(184,231,134,.12)}
+.audio-review-banner{background:linear-gradient(135deg,#172330,#111b25);border:2px solid #5aa7ff;border-radius:10px;padding:16px 20px;margin:16px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(90,167,255,.15)}
+.audio-review-content{flex:1;min-width:260px}
+.audio-review-title{font-size:15px;font-weight:700;color:#9cd0ff;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.audio-review-desc{font-size:12px;color:#c0d2e5;line-height:1.5}
+.btn-mux-action{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:all .2s ease;box-shadow:0 2px 10px rgba(37,99,235,.4)}
+.btn-mux-action:hover{background:linear-gradient(135deg,#60a5fa,#3b82f6);transform:translateY(-1px);box-shadow:0 4px 14px rgba(37,99,235,.6)}
+.video-badge-dubbed{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:#182b1d;border:1px solid #5a9e3d;padding:3px 10px;border-radius:20px;font-weight:600;margin-bottom:8px}
 .download-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
 .download-header h3{margin:0;font-size:17px;font-weight:700;color:var(--text);letter-spacing:-.3px}
 .badge-completed{background:#1e3518;color:var(--accent);border:1px solid var(--accent);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700}
