@@ -404,10 +404,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r_del_blocked.status_code, 400)
         self.assertIn('đang được', r_del_blocked.text)
 
-        # Unbind project voice -> delete should succeed
-        core.update(pid, voice='Hải Đăng')
-        r_del_ok = self.client.delete(f'/api/voices/{vid}')
-        self.assertEqual(r_del_ok.status_code, 200)
+        # Force delete should reset project voice and succeed
+        r_del_force = self.client.delete(f'/api/voices/{vid}?force=1')
+        self.assertEqual(r_del_force.status_code, 200)
+        proj_reset = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_reset['voice'], 'Hải Đăng')
+
+        # Re-create clone voice and test preview tasks do not block deletion
+        r_recreate = self.client.post('/api/voices', data={'name': 'Giọng Test Preview Task'},
+                                      files={'file': ('sample.wav', wav_bytes, 'audio/wav')})
+        vid2 = r_recreate.json()['id']
+        # Create a preview task for vid2
+        prev_pid = 'a1b2c3d4e5f678901234567890abcdef'
+        core.write_json(core.folder(prev_pid) / 'segments.json', [{'id': 's1', 'start': 0, 'end': 2, 'source': '', 'translation': 'Test'}])
+        with core.db() as conn:
+            conn.execute("INSERT INTO projects (id, name, state, step, created, voice) VALUES (?, ?, ?, ?, ?, ?)",
+                         (prev_pid, f"Voice Preview: {vid2}", 'completed', 'tts', 1700000000.0, vid2))
+        # Now delete vid2 - should succeed despite Voice Preview project existing!
+        r_del_preview_task = self.client.delete(f'/api/voices/{vid2}')
+        self.assertEqual(r_del_preview_task.status_code, 200)
+        # And preview project should be deleted
+        with core.db() as conn:
+            self.assertIsNone(conn.execute('SELECT * FROM projects WHERE id=?', (prev_pid,)).fetchone())
 
         # Built-in default voice preview trigger
         r_builtin_prev = self.client.post('/api/voices/Hải Đăng/preview', json={'text': 'Thử giọng Hải Đăng'})

@@ -603,14 +603,29 @@ def trigger_voice_preview(vid: str, body: VoicePreviewBody = None):
 
 
 @app.delete('/api/voices/{vid}')
-def delete_voice(vid: str):
+def delete_voice(vid: str, force: int = 0):
     with db() as c:
         v_row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
         if not v_row:
             raise HTTPException(404, 'Không tìm thấy giọng')
-        used = c.execute('SELECT COUNT(*) as cnt FROM projects WHERE voice=?', (vid,)).fetchone()['cnt']
+
+        # Clean up any internal Voice Preview tasks for this voice
+        preview_rows = c.execute("SELECT id FROM projects WHERE (voice=? OR voice_male=? OR voice_female=?) AND name LIKE 'Voice Preview:%'",
+                                 (vid, vid, vid)).fetchall()
+        for pr in preview_rows:
+            shutil.rmtree(DATA / pr['id'], ignore_errors=True)
+        c.execute("DELETE FROM projects WHERE (voice=? OR voice_male=? OR voice_female=?) AND name LIKE 'Voice Preview:%'",
+                  (vid, vid, vid))
+
+        used = c.execute("SELECT COUNT(*) as cnt FROM projects WHERE (voice=? OR voice_male=? OR voice_female=?) AND name NOT LIKE 'Voice Preview:%'",
+                         (vid, vid, vid)).fetchone()['cnt']
         if used > 0:
-            raise HTTPException(400, f'Không thể xóa: Giọng này đang được {used} dự án sử dụng. Hãy đổi giọng dự án trước khi xóa.')
+            if not force:
+                raise HTTPException(400, f'Không thể xóa: Giọng này đang được {used} dự án sử dụng. Hãy đổi giọng dự án trước khi xóa hoặc chọn buộc xóa.')
+            c.execute("UPDATE projects SET voice='Hải Đăng' WHERE voice=?", (vid,))
+            c.execute("UPDATE projects SET voice_male='Hải Đăng' WHERE voice_male=?", (vid,))
+            c.execute("UPDATE projects SET voice_female='Mai Anh' WHERE voice_female=?", (vid,))
+
         c.execute('DELETE FROM voices WHERE id=?', (vid,))
         c.execute('DELETE FROM voice_favorites WHERE voice_id=?', (vid,))
     v_dir = DATA / 'voices' / vid

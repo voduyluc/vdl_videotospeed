@@ -2509,11 +2509,25 @@ async function loadVoiceLibrary(){
           delBtn.onclick = async () => {
             if(!confirm(t('confirmDeleteVoice', v.name))) return;
             try {
-              await api(`/voices/${v.id}`, {method: 'DELETE'});
+              await api(`/voices/${encodeURIComponent(v.id)}`, {method: 'DELETE'});
               toast(t('toastDeletedVoice', v.name));
               await loadVoiceLibrary();
               await refresh(true);
             } catch(err) {
+              if (err.message && err.message.includes('đang được')) {
+                if (confirm(`${err.message}\n\nBạn có muốn buộc xóa không? (Các dự án đó sẽ tự động chuyển về giọng mặc định)`)) {
+                  try {
+                    await api(`/voices/${encodeURIComponent(v.id)}?force=1`, {method: 'DELETE'});
+                    toast(t('toastDeletedVoice', v.name));
+                    await loadVoiceLibrary();
+                    await refresh(true);
+                    return;
+                  } catch(forceErr) {
+                    toast(t('toastCantDeleteVoice') + forceErr.message);
+                    return;
+                  }
+                }
+              }
               toast(t('toastCantDeleteVoice') + err.message);
             }
           };
