@@ -335,3 +335,32 @@ def parse_srt(content):
         })
         idx += 1
     return segments
+
+
+def has_audio_stream(path):
+    """Check if the media file contains at least one audio stream."""
+    try:
+        out = run(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                   '-show_entries', 'stream=codec_type',
+                   '-of', 'default=noprint_wrappers=1:nokey=1', str(path)]).strip()
+        return bool(out)
+    except Exception:
+        return False
+
+
+def create_silent_wav(path, duration_sec, channels=1, sample_rate=16000):
+    """Generate a clean PCM 16-bit silent WAV file with specified duration and channels."""
+    import wave
+    duration_sec = max(0.5, float(duration_sec or 1.0))
+    num_frames = int(round(sample_rate * duration_sec))
+    with wave.open(str(path), 'wb') as out:
+        out.setnchannels(channels)
+        out.setsampwidth(2)
+        out.setframerate(sample_rate)
+        chunk_frames = min(sample_rate, num_frames)
+        chunk_bytes = b'\x00' * (chunk_frames * channels * 2)
+        remaining = num_frames
+        while remaining > 0:
+            to_write = min(remaining, chunk_frames)
+            out.writeframes(chunk_bytes[:to_write * channels * 2])
+            remaining -= to_write

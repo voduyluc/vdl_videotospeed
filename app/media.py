@@ -1,27 +1,45 @@
 import os
 import wave
 
-from app.core import duration, folder, read_json, run, subtitles, update, wav_duration, write_json
+from app.core import create_silent_wav, duration, folder, has_audio_stream, read_json, run, subtitles, update, wav_duration, write_json
 
 
 def extract(pid):
     p = folder(pid)
-    tmp = p / 'stt.tmp.wav'
-    run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
-         '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', tmp])
-    tmp.replace(p / 'stt.wav')
-    # Extract pristine stereo background audio for mixing stage
-    bg_tmp = p / 'background.tmp.wav'
-    run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
-         '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_tmp])
-    bg_tmp.replace(p / 'background.wav')
+    source_path = p / 'source'
+
+    total = 0.0
     try:
-        total = duration(p / 'source')
+        total = duration(source_path)
     except Exception:
         total = 0.0
+
     if not total or total <= 0:
-        total = wav_duration(p / 'stt.wav')
-    update(pid, duration=total)
+        segs = read_json(p / 'segments.json', [])
+        if segs:
+            total = max((s.get('end', 0.0) for s in segs), default=0.0)
+
+    has_audio = has_audio_stream(source_path)
+
+    if has_audio:
+        tmp = p / 'stt.tmp.wav'
+        run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', source_path, '-map', '0:a:0',
+             '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', tmp])
+        tmp.replace(p / 'stt.wav')
+        # Extract pristine stereo background audio for mixing stage
+        bg_tmp = p / 'background.tmp.wav'
+        run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', source_path, '-map', '0:a:0',
+             '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_tmp])
+        bg_tmp.replace(p / 'background.wav')
+        if not total or total <= 0:
+            total = wav_duration(p / 'stt.wav')
+    else:
+        # Video has NO audio stream (video-only / silent video)
+        dur = max(1.0, total if total and total > 0 else 5.0)
+        create_silent_wav(p / 'stt.wav', dur, channels=1, sample_rate=16000)
+        create_silent_wav(p / 'background.wav', dur, channels=2, sample_rate=48000)
+
+    update(pid, duration=total if total and total > 0 else wav_duration(p / 'stt.wav'))
 
 
 def build_atempo_filter(speed: float) -> str:
@@ -177,8 +195,11 @@ def mix(pid):
 
     bg_path = p / 'background.wav'
     if not bg_path.exists() and (p / 'source').exists():
-        run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
-             '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_path])
+        if has_audio_stream(p / 'source'):
+            run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
+                 '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_path])
+        else:
+            create_silent_wav(bg_path, row.get('duration', 5.0), channels=2, sample_rate=48000)
 
     narr_path = p / 'narration.wav'
     if not narr_path.exists():
@@ -212,8 +233,11 @@ def render_mix_preview(pid, start_sec=0.0, duration_sec=15.0):
 
     bg_path = p / 'background.wav'
     if not bg_path.exists() and (p / 'source').exists():
-        run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
-             '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_path])
+        if has_audio_stream(p / 'source'):
+            run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
+                 '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_path])
+        else:
+            create_silent_wav(bg_path, row.get('duration', 5.0), channels=2, sample_rate=48000)
 
     narr_path = p / 'narration.wav'
     if not narr_path.exists():

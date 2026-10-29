@@ -126,6 +126,7 @@ class DurationTests(unittest.TestCase):
             return ''
 
         with patch('app.media.run', side_effect=mock_ffmpeg), \
+             patch('app.media.has_audio_stream', return_value=True), \
              patch('app.media.duration', return_value=0.0):
             extract(pid)
             with core.db() as c:
@@ -152,3 +153,41 @@ Line 2 with tags <b>bold</b>
         self.assertEqual(segs[1]['start'], 65.0)
         self.assertEqual(segs[1]['end'], 68.0)
         self.assertEqual(segs[1]['text'], 'Line 2 with tags bold')
+
+    def test_create_silent_wav(self):
+        from app.core import create_silent_wav
+        dest = core.DATA / 'silent_test.wav'
+        try:
+            create_silent_wav(dest, duration_sec=2.0, channels=2, sample_rate=48000)
+            with wave.open(str(dest), 'rb') as audio:
+                self.assertEqual(audio.getnchannels(), 2)
+                self.assertEqual(audio.getframerate(), 48000)
+                self.assertEqual(audio.getnframes(), 48000 * 2)
+        finally:
+            dest.unlink(missing_ok=True)
+
+    def test_extract_on_video_without_audio_stream(self):
+        from app.media import extract
+        pid = uuid.uuid4().hex
+        p = core.folder(pid)
+        with core.db() as c:
+            c.execute('INSERT INTO projects(id,name,state,step,duration,created,voice) VALUES(?,?,?,?,?,?,?)',
+                      (pid, 'extract no audio', 'running', 'extract', 0, 0, 'test'))
+        (p / 'source').write_bytes(b'fake_silent_video')
+
+        with patch('app.media.has_audio_stream', return_value=False), \
+             patch('app.media.duration', return_value=4.0):
+            extract(pid)
+            self.assertTrue((p / 'stt.wav').exists())
+            self.assertTrue((p / 'background.wav').exists())
+            with wave.open(str(p / 'stt.wav'), 'rb') as a:
+                self.assertEqual(a.getnchannels(), 1)
+                self.assertEqual(a.getframerate(), 16000)
+                self.assertEqual(a.getnframes(), 16000 * 4)
+            with wave.open(str(p / 'background.wav'), 'rb') as a:
+                self.assertEqual(a.getnchannels(), 2)
+                self.assertEqual(a.getframerate(), 48000)
+                self.assertEqual(a.getnframes(), 48000 * 4)
+            with core.db() as c:
+                row = c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
+            self.assertAlmostEqual(row['duration'], 4.0, places=1)
