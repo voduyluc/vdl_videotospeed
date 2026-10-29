@@ -88,6 +88,9 @@ def init_db():
             id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL NOT NULL,
             sample_file TEXT NOT NULL, version TEXT NOT NULL,
             duration REAL NOT NULL, preview_path TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS voice_favorites (
+            voice_id TEXT PRIMARY KEY,
+            is_top INTEGER NOT NULL DEFAULT 1)''')
         (DATA / 'voices').mkdir(exist_ok=True)
         c.execute("UPDATE projects SET state='queued' WHERE state='running'")
 

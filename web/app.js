@@ -160,8 +160,16 @@ const I18N = {
     ratio130: "Vượt ≥ 130% (+30%)",
     ratio150: "Vượt ≥ 150% (+50%)",
     ratio200: "Vượt ≥ 200% (Gấp đôi)",
-    tabBuiltinVoices: "⭐ Giọng mặc định ({0})",
+    tabTopVoices: "⭐ Đề xuất ({0})",
+    tabBuiltinVoices: "🏙️ Giọng hệ thống ({0})",
     tabClonedVoices: "🎙️ Giọng nhân bản ({0})",
+    noTopVoices: "Chưa có giọng nào trong Đề xuất hàng đầu. Bấm \"☆ Đề xuất\" ở bất kỳ giọng nào để ghim lên đầu!",
+    voiceStarActive: "⭐ Đã đề xuất",
+    voiceStarInactive: "☆ Đề xuất",
+    voiceStarActiveTitle: "Bỏ đánh dấu khỏi Đề xuất hàng đầu",
+    voiceStarInactiveTitle: "Đánh dấu là Đề xuất hàng đầu",
+    voiceTopAdded: "Đã thêm \"{0}\" vào Đề xuất hàng đầu!",
+    voiceTopRemoved: "Đã bỏ \"{0}\" khỏi Đề xuất hàng đầu!",
     voiceCreatingPreview: "Đang tạo câu đọc thử...",
     tabAiCondense: "🤖 AI thu gọn câu dài ({0} câu)",
     tabAiCondenseTitle: "Dùng LLM thông minh viết lại các câu bị dài, giữ nguyên ý chính và không vượt quá số từ an toàn",
@@ -415,8 +423,16 @@ const I18N = {
     ratio130: "Exceeds ≥ 130% (+30%)",
     ratio150: "Exceeds ≥ 150% (+50%)",
     ratio200: "Exceeds ≥ 200% (2x)",
-    tabBuiltinVoices: "⭐ Built-in Voices ({0})",
+    tabTopVoices: "⭐ Top Picks ({0})",
+    tabBuiltinVoices: "🏙️ System Voices ({0})",
     tabClonedVoices: "🎙️ Cloned Voices ({0})",
+    noTopVoices: "No voices marked as Top Recommended yet. Click \"☆ Feature\" on any voice to pin it to top!",
+    voiceStarActive: "⭐ Featured",
+    voiceStarInactive: "☆ Feature",
+    voiceStarActiveTitle: "Unmark as top recommended voice",
+    voiceStarInactiveTitle: "Mark as top recommended voice",
+    voiceTopAdded: "Added \"{0}\" to Top Recommended voices!",
+    voiceTopRemoved: "Removed \"{0}\" from Top Recommended voices!",
     voiceCreatingPreview: "Generating preview...",
     tabAiCondense: "🤖 AI Condense Long Sentences ({0})",
     tabAiCondenseTitle: "Use LLM to rewrite long sentences concisely, preserving key meaning within safe word limits",
@@ -603,11 +619,20 @@ function getVoiceGroupName(key){
     "🏙️ Miền Bắc": t('grpNorth'),
     "🏖️ Miền Trung": t('grpCentral'),
     "🌴 Miền Nam": t('grpSouth'),
+    "⭐ Giọng nhân bản (Clone)": t('grpClone'),
     "🎙️ Giọng Clone Cá Nhân": t('grpClone'),
     "Giọng khác": t('grpOther')
   };
   return dict[key] || key;
 }
+
+const GROUP_ORDER = [
+  '⭐ Đề xuất hàng đầu',
+  '⭐ Giọng nhân bản (Clone)',
+  '🏙️ Miền Bắc',
+  '🏖️ Miền Trung',
+  '🌴 Miền Nam'
+];
 
 function stopPreview(){
   previewRequest++;
@@ -694,8 +719,13 @@ function populateVoiceSelect(select, currentVoice){
     if(!groups[grpName]) groups[grpName] = [];
     groups[grpName].push(v);
   }
+  const sortedGroupNames = [
+    ...GROUP_ORDER.filter(g => groups[g]),
+    ...Object.keys(groups).filter(g => !GROUP_ORDER.includes(g))
+  ];
   let matched = false;
-  for(const [grpName, items] of Object.entries(groups)){
+  for(const grpName of sortedGroupNames){
+    const items = groups[grpName];
     const grp = el('optgroup');
     grp.label = getVoiceGroupName(grpName);
     for(const v of items){
@@ -746,8 +776,14 @@ function populateGenderVoiceSelect(select, targetGender, currentVoice){
     groups[grpName].push(v);
   }
 
+  const sortedGroupNames = [
+    ...GROUP_ORDER.filter(g => groups[g]),
+    ...Object.keys(groups).filter(g => !GROUP_ORDER.includes(g))
+  ];
+
   let matched = false;
-  for(const [grpName, items] of Object.entries(groups)){
+  for(const grpName of sortedGroupNames){
+    const items = groups[grpName];
     const grp = el('optgroup');
     grp.label = getVoiceGroupName(grpName);
     for(const v of items){
@@ -767,6 +803,19 @@ function populateGenderVoiceSelect(select, targetGender, currentVoice){
     grp.append(opt);
     select.prepend(grp);
   }
+}
+
+function updateAllOpenVoiceSelects(){
+  const uv = $('#uploadVoice');
+  if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
+  const single = $('#modalSingleVoice');
+  if(single) populateVoiceSelect(single, single.value || 'Hải Đăng');
+  const male = $('#modalVoiceMale');
+  if(male) populateGenderVoiceSelect(male, 'male', male.value || 'Hải Đăng');
+  const female = $('#modalVoiceFemale');
+  if(female) populateGenderVoiceSelect(female, 'female', female.value || 'Mai Anh');
+  const detailVoice = $('#voice');
+  if(detailVoice && current) populateVoiceSelect(detailVoice, current.voice || detailVoice.value || 'Hải Đăng');
 }
 
 function buildVoiceSelect(currentVoice){
@@ -2324,7 +2373,7 @@ function initUsageModal(){
   modal.onclick = (e) => { if(e.target === modal) hide(); };
 }
 
-let currentVoiceLibTab = 'builtin';
+let currentVoiceLibTab = 'top';
 
 async function loadVoiceLibrary(){
   const listEl = $('#voiceList');
@@ -2333,34 +2382,49 @@ async function loadVoiceLibrary(){
   try {
     const allVoices = await api('/voices/all');
     await fetchVoicesAll();
-    const uv = $('#uploadVoice');
-    if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
+    updateAllOpenVoiceSelects();
 
+    const topVoices = allVoices.filter(v => v.is_top);
     const clonedVoices = allVoices.filter(v => v.is_clone);
     const builtinVoices = allVoices.filter(v => !v.is_clone);
 
     listEl.replaceChildren();
 
     const tabBar = el('div', undefined, 'voice-tab-bar');
+    const topTabBtn = el('button', t('tabTopVoices', topVoices.length), 'voice-tab-btn' + (currentVoiceLibTab === 'top' ? ' active' : ''));
     const builtinTabBtn = el('button', t('tabBuiltinVoices', builtinVoices.length), 'voice-tab-btn' + (currentVoiceLibTab === 'builtin' ? ' active' : ''));
     const cloneTabBtn = el('button', t('tabClonedVoices', clonedVoices.length), 'voice-tab-btn' + (currentVoiceLibTab === 'clone' ? ' active' : ''));
 
+    topTabBtn.onclick = () => { currentVoiceLibTab = 'top'; renderList(); };
     builtinTabBtn.onclick = () => { currentVoiceLibTab = 'builtin'; renderList(); };
     cloneTabBtn.onclick = () => { currentVoiceLibTab = 'clone'; renderList(); };
-    tabBar.append(builtinTabBtn, cloneTabBtn);
+    tabBar.append(topTabBtn, builtinTabBtn, cloneTabBtn);
     listEl.append(tabBar);
 
     const itemsContainer = el('div', undefined, 'voice-items-container');
     listEl.append(itemsContainer);
 
     function renderList() {
+      topTabBtn.className = 'voice-tab-btn' + (currentVoiceLibTab === 'top' ? ' active' : '');
       builtinTabBtn.className = 'voice-tab-btn' + (currentVoiceLibTab === 'builtin' ? ' active' : '');
       cloneTabBtn.className = 'voice-tab-btn' + (currentVoiceLibTab === 'clone' ? ' active' : '');
       itemsContainer.replaceChildren();
 
-      const targetList = (currentVoiceLibTab === 'builtin') ? builtinVoices : clonedVoices;
+      let targetList = [];
+      if (currentVoiceLibTab === 'top') {
+        targetList = allVoices.filter(v => v.is_top);
+      } else if (currentVoiceLibTab === 'clone') {
+        targetList = clonedVoices;
+      } else {
+        targetList = builtinVoices;
+      }
+
       if (!targetList.length) {
-        itemsContainer.innerHTML = `<p class="hint-text" style="text-align:center;padding:20px">${currentVoiceLibTab === 'clone' ? t('noClonedVoices') : 'Không có giọng mặc định'}</p>`;
+        let emptyMsg = 'Không có giọng nào.';
+        if (currentVoiceLibTab === 'top') emptyMsg = t('noTopVoices');
+        else if (currentVoiceLibTab === 'clone') emptyMsg = t('noClonedVoices');
+        else emptyMsg = 'Không có giọng mặc định';
+        itemsContainer.innerHTML = `<p class="hint-text" style="text-align:center;padding:20px">${emptyMsg}</p>`;
         return;
       }
 
@@ -2368,9 +2432,11 @@ async function loadVoiceLibrary(){
         const item = el('div', undefined, 'voice-item');
         const info = el('div', undefined, 'voice-info');
         const nameEl = el('div', undefined, 'voice-name');
-        nameEl.append(el('span', (v.is_clone ? '🎙️ ' : '⭐ ') + (v.name || v.id)));
-        if (v.group) {
-          nameEl.append(el('span', v.group, 'voice-badge-group'));
+        nameEl.append(el('span', (v.is_clone ? '🎙️ ' : (v.is_top ? '⭐ ' : '🗣️ ')) + (v.name || v.id)));
+        if (v.is_top) {
+          nameEl.append(el('span', '⭐ ' + t('grpTop'), 'voice-badge-group badge-top'));
+        } else if (v.base_group || v.group) {
+          nameEl.append(el('span', v.base_group || v.group, 'voice-badge-group'));
         }
         const metaText = v.is_clone
           ? t('voiceMeta', v.duration, new Date(v.created * 1000).toLocaleDateString())
@@ -2378,6 +2444,27 @@ async function loadVoiceLibrary(){
         info.append(nameEl, el('div', metaText, 'voice-meta'));
 
         const actions = el('div', undefined, 'voice-actions');
+
+        // Star / Top Recommended toggle button
+        const starBtn = el('button', v.is_top ? t('voiceStarActive') : t('voiceStarInactive'), 'voice-btn-sm voice-star-btn' + (v.is_top ? ' active' : ''));
+        starBtn.title = v.is_top ? t('voiceStarActiveTitle') : t('voiceStarInactiveTitle');
+        starBtn.onclick = async () => {
+          starBtn.disabled = true;
+          const newIsTop = !v.is_top;
+          try {
+            await api(`/voices/${encodeURIComponent(v.id)}/top`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ is_top: newIsTop })
+            });
+            toast(newIsTop ? t('voiceTopAdded', v.name || v.id) : t('voiceTopRemoved', v.name || v.id));
+            await loadVoiceLibrary();
+          } catch(err) {
+            toast(err.message);
+            starBtn.disabled = false;
+          }
+        };
+        actions.append(starBtn);
 
         if (v.is_clone) {
           const sampleBtn = el('button', t('voicePlaySample'), 'voice-btn-sm secondary');

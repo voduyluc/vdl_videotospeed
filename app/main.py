@@ -12,7 +12,9 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.core import DATA, ROOT, db, duration, folder, read_json, run, subtitles, tts_key, update, wav_duration, write_json
+from app.core import DATA, ROOT, db, duration, folder, init_db, read_json, run, subtitles, tts_key, update, wav_duration, write_json
+
+init_db()
 
 security = HTTPBasic()
 
@@ -47,35 +49,44 @@ def project(pid):
 
 
 VOICES = [
-    {'id': 'Hải Đăng', 'label': 'Hải Đăng (Nam Bắc - Chuẩn/Mặc định)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Mai Anh', 'label': 'Mai Anh (Nữ Bắc - Tự nhiên)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Trúc Ly', 'label': 'Trúc Ly (Nữ Nam - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Thiện Minh', 'label': 'Thiện Minh (Nam Bắc - Trầm ấm)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Thùy Dung', 'label': 'Thùy Dung (Nữ Nam - Dịu dàng)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Ngọc Huyền', 'label': 'Ngọc Huyền (Nữ Bắc - Nhẹ nhàng)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Quang Sơn', 'label': 'Quang Sơn (Nam Trung - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Ngọc Trân', 'label': 'Ngọc Trân (Nữ Trung - Ngọt ngào)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Thiền Tâm Đức', 'label': 'Thiền Tâm Đức (Nam - Phật pháp/Trầm)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Adam bựa', 'label': 'Adam bựa (Nam - Hài hước/Vlog)', 'group': '⭐ Đề xuất hàng đầu'},
-    {'id': 'Minh Đức', 'label': 'Minh Đức (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Phạm Tuyên', 'label': 'Phạm Tuyên (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Xuân Vĩnh', 'label': 'Xuân Vĩnh (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Thanh Bình', 'label': 'Thanh Bình (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Quốc Tuấn', 'label': 'Quốc Tuấn (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Ngọc Linh', 'label': 'Ngọc Linh (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Đoan Trang', 'label': 'Đoan Trang (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Quỳnh Anh', 'label': 'Quỳnh Anh (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
-    {'id': 'Thái Sơn', 'label': 'Thái Sơn (Nam Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Minh Triết', 'label': 'Minh Triết (Nam Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Đức Trí', 'label': 'Đức Trí (Nam Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Adam', 'label': 'Adam (Nam Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Thục Đoan', 'label': 'Thục Đoan (Nữ Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Mỹ Duyên', 'label': 'Mỹ Duyên (Nữ Nam)', 'group': '🌴 Miền Nam'},
-    {'id': 'Kim Thanh', 'label': 'Kim Thanh (Nữ Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Hải Đăng', 'label': 'Hải Đăng (Nam Bắc - Chuẩn/Mặc định)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Mai Anh', 'label': 'Mai Anh (Nữ Bắc - Tự nhiên)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Trúc Ly', 'label': 'Trúc Ly (Nữ Nam - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🌴 Miền Nam'},
+    {'id': 'Thiện Minh', 'label': 'Thiện Minh (Nam Bắc - Trầm ấm)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Thùy Dung', 'label': 'Thùy Dung (Nữ Nam - Dịu dàng)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🌴 Miền Nam'},
+    {'id': 'Ngọc Huyền', 'label': 'Ngọc Huyền (Nữ Bắc - Nhẹ nhàng)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Quang Sơn', 'label': 'Quang Sơn (Nam Trung - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏖️ Miền Trung'},
+    {'id': 'Ngọc Trân', 'label': 'Ngọc Trân (Nữ Trung - Ngọt ngào)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏖️ Miền Trung'},
+    {'id': 'Thiền Tâm Đức', 'label': 'Thiền Tâm Đức (Nam - Phật pháp/Trầm)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Adam bựa', 'label': 'Adam bựa (Nam - Hài hước/Vlog)', 'group': '⭐ Đề xuất hàng đầu', 'region': '🌴 Miền Nam'},
+    {'id': 'Minh Đức', 'label': 'Minh Đức (Nam Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Phạm Tuyên', 'label': 'Phạm Tuyên (Nam Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Xuân Vĩnh', 'label': 'Xuân Vĩnh (Nam Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Thanh Bình', 'label': 'Thanh Bình (Nam Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Quốc Tuấn', 'label': 'Quốc Tuấn (Nam Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Ngọc Linh', 'label': 'Ngọc Linh (Nữ Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Đoan Trang', 'label': 'Đoan Trang (Nữ Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Quỳnh Anh', 'label': 'Quỳnh Anh (Nữ Bắc)', 'group': '🏙️ Miền Bắc', 'region': '🏙️ Miền Bắc'},
+    {'id': 'Thái Sơn', 'label': 'Thái Sơn (Nam Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Minh Triết', 'label': 'Minh Triết (Nam Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Đức Trí', 'label': 'Đức Trí (Nam Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Adam', 'label': 'Adam (Nam Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Thục Đoan', 'label': 'Thục Đoan (Nữ Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Mỹ Duyên', 'label': 'Mỹ Duyên (Nữ Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
+    {'id': 'Kim Thanh', 'label': 'Kim Thanh (Nữ Nam)', 'group': '🌴 Miền Nam', 'region': '🌴 Miền Nam'},
 ]
+
+DEFAULT_TOP_VOICES = {
+    'Hải Đăng', 'Mai Anh', 'Trúc Ly', 'Thiện Minh', 'Thùy Dung',
+    'Ngọc Huyền', 'Quang Sơn', 'Ngọc Trân', 'Thiền Tâm Đức', 'Adam bựa'
+}
 
 
 SUPPORTED_LANGUAGES = {'ko': 'Tiếng Hàn', 'en': 'Tiếng Anh', 'ja': 'Tiếng Nhật'}
+
+
+class VoiceTopBody(BaseModel):
+    is_top: bool
 
 
 @app.get('/api/voices')
@@ -91,19 +102,41 @@ def list_voices():
 def all_voices():
     with db() as c:
         clones = [dict(r) for r in c.execute('SELECT * FROM voices ORDER BY created DESC')]
+        fav_rows = c.execute('SELECT voice_id, is_top FROM voice_favorites').fetchall()
+        fav_map = {r['voice_id']: bool(r['is_top']) for r in fav_rows}
+
     clone_items = [
-        {'id': v['id'], 'name': v['name'], 'label': f"🎙️ {v['name']} ({v['duration']}s - Clone)", 'group': '⭐ Giọng nhân bản (Clone)', 'is_clone': True,
+        {'id': v['id'], 'name': v['name'], 'label': f"🎙️ {v['name']} ({v['duration']}s - Clone)",
+         'group': '⭐ Đề xuất hàng đầu' if fav_map.get(v['id'], False) else '⭐ Giọng nhân bản (Clone)',
+         'base_group': '⭐ Giọng nhân bản (Clone)',
+         'is_clone': True,
+         'is_top': fav_map.get(v['id'], False),
          'duration': v.get('duration', 0), 'created': v.get('created', 0),
          'has_preview': bool((v.get('preview_path') and Path(v['preview_path']).exists()) or (DATA / 'voices' / v['id'] / 'preview.wav').exists())}
         for v in clones
     ]
     builtin_items = [
-        {'id': v['id'], 'name': v['id'], 'label': v['label'], 'group': v['group'], 'is_clone': False,
+        {'id': v['id'], 'name': v['id'], 'label': v['label'],
+         'group': '⭐ Đề xuất hàng đầu' if fav_map.get(v['id'], (v['id'] in DEFAULT_TOP_VOICES)) else v.get('region', v['group']),
+         'base_group': v.get('region', v['group']),
+         'is_clone': False,
+         'is_top': fav_map.get(v['id'], (v['id'] in DEFAULT_TOP_VOICES)),
          'duration': 4.0, 'created': 0,
          'has_preview': (DATA / 'voices' / v['id'] / 'preview.wav').exists()}
         for v in VOICES
     ]
     return clone_items + builtin_items
+
+
+@app.post('/api/voices/{vid}/top')
+def set_voice_top(vid: str, body: VoiceTopBody):
+    vid = vid.strip()
+    if not vid:
+        raise HTTPException(400, 'Invalid voice ID')
+    with db() as c:
+        c.execute('INSERT OR REPLACE INTO voice_favorites (voice_id, is_top) VALUES (?, ?)',
+                  (vid, 1 if body.is_top else 0))
+    return {'id': vid, 'is_top': body.is_top}
 
 
 @app.get('/api/projects')
@@ -567,6 +600,7 @@ def delete_voice(vid: str):
         if used > 0:
             raise HTTPException(400, f'Không thể xóa: Giọng này đang được {used} dự án sử dụng. Hãy đổi giọng dự án trước khi xóa.')
         c.execute('DELETE FROM voices WHERE id=?', (vid,))
+        c.execute('DELETE FROM voice_favorites WHERE voice_id=?', (vid,))
     v_dir = DATA / 'voices' / vid
     if v_dir.exists():
         shutil.rmtree(v_dir, ignore_errors=True)

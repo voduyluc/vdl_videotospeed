@@ -412,6 +412,63 @@ class ApiTests(unittest.TestCase):
         r_get_builtin = self.client.get('/api/voices/Hải Đăng/preview')
         self.assertEqual(r_get_builtin.status_code, 200)
 
+    def test_voice_mark_unmark_top_recommendation(self):
+        # 1. Unmark a default top voice ('Adam bựa')
+        r1 = self.client.post('/api/voices/Adam bựa/top', json={'is_top': False})
+        self.assertEqual(r1.status_code, 200)
+        self.assertFalse(r1.json()['is_top'])
+
+        # 2. Mark a previously non-top voice ('Minh Đức') as top
+        r2 = self.client.post('/api/voices/Minh Đức/top', json={'is_top': True})
+        self.assertEqual(r2.status_code, 200)
+        self.assertTrue(r2.json()['is_top'])
+
+        # Check in all_voices
+        voices = self.client.get('/api/voices/all').json()
+        adam = next(v for v in voices if v['id'] == 'Adam bựa')
+        minh_duc = next(v for v in voices if v['id'] == 'Minh Đức')
+
+        self.assertFalse(adam['is_top'])
+        self.assertEqual(adam['group'], '🌴 Miền Nam')
+
+        self.assertTrue(minh_duc['is_top'])
+        self.assertEqual(minh_duc['group'], '⭐ Đề xuất hàng đầu')
+
+        # 3. Create a clone voice and mark it as top
+        import io
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b'\x01\x00' * 72000)
+        r_clone = self.client.post('/api/voices', data={'name': 'Giọng VIP'},
+                                   files={'file': ('vip.wav', buf.getvalue(), 'audio/wav')})
+        self.assertEqual(r_clone.status_code, 200)
+        vid = r_clone.json()['id']
+
+        # By default clone voice is not top
+        voices = self.client.get('/api/voices/all').json()
+        vip = next(v for v in voices if v['id'] == vid)
+        self.assertFalse(vip['is_top'])
+        self.assertEqual(vip['group'], '⭐ Giọng nhân bản (Clone)')
+
+        # Mark clone as top
+        r_top_clone = self.client.post(f'/api/voices/{vid}/top', json={'is_top': True})
+        self.assertEqual(r_top_clone.status_code, 200)
+        self.assertTrue(r_top_clone.json()['is_top'])
+
+        voices = self.client.get('/api/voices/all').json()
+        vip_updated = next(v for v in voices if v['id'] == vid)
+        self.assertTrue(vip_updated['is_top'])
+        self.assertEqual(vip_updated['group'], '⭐ Đề xuất hàng đầu')
+
+        # Delete clone voice cleans up voice_favorites
+        self.client.delete(f'/api/voices/{vid}')
+        with core.db() as c:
+            fav = c.execute('SELECT * FROM voice_favorites WHERE voice_id=?', (vid,)).fetchone()
+            self.assertIsNone(fav)
+
     def test_audio_mix_ducking_filter_and_settings(self):
         from app.media import build_ducking_filter
         f_duck = build_ducking_filter(0.3, 1.2, ducking=True, attenuation=18.0)
