@@ -193,10 +193,23 @@ class ApiTests(unittest.TestCase):
         self.assertFalse((p_dir / 'stt.wav').exists())
         self.assertFalse((p_dir / 'tts').exists())
 
-        # State must be reset to step 1 (extract, queued)
+        # State must be reset to step 1 (extract, ready - does not auto restart)
         proj = self.client.get(f'/api/projects/{pid}').json()
-        self.assertEqual(proj['state'], 'queued')
+        self.assertEqual(proj['state'], 'ready')
         self.assertEqual(proj['step'], 'extract')
+
+        # User can modify settings before starting
+        r_settings = self.client.patch(f'/api/projects/{pid}/settings', json={'multi_speaker': 1, 'source_language': 'en'})
+        self.assertEqual(r_settings.status_code, 200)
+        proj_updated = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_updated['multi_speaker'], 1)
+        self.assertEqual(proj_updated['source_language'], 'en')
+
+        # User presses start -> transitions to queued
+        r_start = self.client.post(f'/api/projects/{pid}/start')
+        self.assertEqual(r_start.status_code, 200)
+        proj_started = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_started['state'], 'queued')
 
     def test_empty_translation_cannot_generate(self):
         pid = self.create()

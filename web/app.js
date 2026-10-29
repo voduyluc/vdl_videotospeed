@@ -67,6 +67,7 @@ const I18N = {
     emptyTitle: "Từ lời thoại đến giọng Việt",
     emptyDesc: "Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.",
     status_queued: "Đang chờ",
+    status_ready: "Sẵn sàng",
     status_running: "Đang xử lý",
     status_review: "Chờ duyệt",
     status_failed: "Cần kiểm tra",
@@ -294,6 +295,7 @@ const I18N = {
     emptyTitle: "From Dialogue to Vietnamese Dub",
     emptyDesc: "Upload a video to start. Transcribe → Translate → Review → Synthesize → Export.",
     status_queued: "Queued",
+    status_ready: "Ready",
     status_running: "Processing",
     status_review: "Review",
     status_failed: "Failed",
@@ -903,6 +905,8 @@ function renderPipeline(p){
   let overallPct=0;
   if(state==='completed'){
     overallPct=100;
+  }else if(state==='ready'){
+    overallPct=0;
   }else if(currentIdx>=0){
     if(state==='review'){
       overallPct=50;
@@ -1201,6 +1205,11 @@ function render(){
     const generate=el('button',t('saveGenerateBtn'));
     generate.onclick=()=>act('generate');
     actBar.append(saveButton, generate);
+  }
+  if(['ready'].includes(p.state)){
+    const startBtn=el('button', '▶ ' + t('startProcessBtn'), 'primary');
+    startBtn.onclick=()=>act('start');
+    actBar.append(startBtn);
   }
   if(['running','queued'].includes(p.state)){
     const b=el('button',t('cancelProcessBtn'),'secondary');
@@ -1612,7 +1621,7 @@ async function openProjectModal(mode, p = null) {
     $('#modalFileGroup').hidden = true;
     $('#modalSourceLang').value = p.source_language || 'ko';
 
-    const isStarted = !(p.step === 'extract' && p.state === 'queued');
+    const isStarted = !(p.step === 'extract' && (p.state === 'queued' || p.state === 'ready'));
     $('#modalSourceLang').disabled = isStarted;
     $('#modalMultiSpeaker').disabled = isStarted;
     const lockedHint = $('#modalLockedHint');

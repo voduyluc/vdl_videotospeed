@@ -236,7 +236,7 @@ class ProjectSettings(BaseModel):
 @app.patch('/api/projects/{pid}/settings')
 def update_settings(pid: str, body: ProjectSettings):
     row = project(pid)
-    is_initial = (row['step'] == 'extract' and row['state'] == 'queued')
+    is_initial = (row['step'] == 'extract' and row['state'] in ('ready', 'queued'))
     values = {}
     if body.voice is not None and body.voice.strip():
         values['voice'] = body.voice.strip()
@@ -317,21 +317,22 @@ def action(pid: str, action: str):
                     item.unlink()
                 except Exception:
                     pass
-        update(pid, state='queued', step='extract', cancel=0, error=None, progress='Chạy lại từ đầu')
+        update(pid, state='ready', step='extract', cancel=0, error=None, progress='Đã đưa về ban đầu (Chờ cấu hình & bắt đầu)')
         return {'ok': True}
     if action == 'remix':
         if not (folder(pid) / 'narration.wav').exists():
             raise HTTPException(409, 'Cần tạo audio thuyết minh trước khi phối âm')
         update(pid, state='queued', step='mix', cancel=0, error=None, progress='Đang chờ phối âm')
         return {'ok': True}
-    if action not in ('resume', 'generate') or row['state'] not in ('review', 'failed', 'cancelled'):
+    if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled'):
         raise HTTPException(409, 'Action unavailable')
     if action == 'generate':
         segments = read_json(folder(pid) / 'segments.json', [])
         if not segments or any(not s.get('translation', '').strip() for s in segments):
             raise HTTPException(400, 'Every segment needs a translation')
     update(pid, state='queued', cancel=0, error=None,
-           step='tts' if action == 'generate' else row['step'])
+           step='tts' if action == 'generate' else row['step'],
+           progress='Đang chờ xử lý...' if action in ('start', 'resume') else 'Đang chờ tạo thuyết minh')
     return {'ok': True}
 
 
