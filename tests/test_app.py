@@ -160,6 +160,23 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r_mp3.status_code, 200)
         self.assertIn('movie_thuyet_minh.mp3', r_mp3.headers.get('content-disposition', ''))
 
+    def test_ui_language_switcher_and_static_assets(self):
+        res = self.client.get('/')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('id="uiLangSelect"', res.text)
+        self.assertIn('data-i18n=', res.text)
+        self.assertIn('value="vi"', res.text)
+        self.assertIn('value="en"', res.text)
+
+        js_res = self.client.get('/static/app.js')
+        self.assertEqual(js_res.status_code, 200)
+        self.assertIn('setUiLanguage', js_res.text)
+        self.assertIn('vietvoice_ui_lang', js_res.text)
+
+        css_res = self.client.get('/static/style.css')
+        self.assertEqual(css_res.status_code, 200)
+        self.assertIn('.lang-select', css_res.text)
+
     def test_usage_stats_endpoint(self):
         r = self.client.get('/api/usage')
         self.assertEqual(r.status_code, 200)

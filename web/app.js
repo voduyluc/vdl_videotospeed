@@ -3,32 +3,490 @@ let selected = null, current = null, dirty = false, page = 0, busy = false, filt
 function countWords(s){ return (s||'').trim().split(/\s+/).filter(Boolean).length; }
 const drafts = new Map();
 let previewAudio = null, previewUrl = null, previewButton = null, previewRequest = 0;
+
+let currentLang = localStorage.getItem('vietvoice_ui_lang') || 'vi';
+
+const I18N = {
+  vi: {
+    headerSubtitle: "Video tiếng Hàn, Anh, Nhật → thuyết minh tiếng Việt · Local GPU",
+    voiceLibTitle: "Quản lý giọng nhân bản (Voice Cloning)",
+    voiceLibBtn: "🎙️ Giọng Clone",
+    usageBtnTitle: "Xem thống kê tài nguyên (VRAM, CPU, RAM, Ổ đĩa)",
+    usageBtn: "📊 Tài nguyên / Usage",
+    closeTitle: "Đóng",
+    closeBtn: "Đóng",
+    refreshTitle: "Làm mới",
+    uploadTitle: "Thêm video",
+    uploadDesc: "Hỗ trợ video tiếng Hàn, Anh hoặc Nhật. Hệ thống sử dụng track audio đầu tiên.",
+    sourceLangLabel: "Ngôn ngữ video nguồn:",
+    langKo: "🇰🇷 Tiếng Hàn (Korean)",
+    langEn: "🇺🇸 Tiếng Anh (English)",
+    langJa: "🇯🇵 Tiếng Nhật (Japanese)",
+    advancedOptions: "⚙️ Tùy chọn nâng cao",
+    voiceLabel: "Giọng đọc:",
+    pauseReviewTitle: "Dừng lại sau khi dịch để kiểm tra và chỉnh sửa trước khi tổng hợp giọng",
+    pauseReviewLabel: "Dừng để duyệt bản dịch",
+    pauseReviewHint: "Bỏ chọn nếu muốn chạy tự động từ đầu đến cuối.",
+    autoFitTitle: "Tự động nén tốc độ âm thanh và cắt nhẹ đuôi để vừa khít thời lượng",
+    autoFitLabel: "Tự nén âm thanh vừa thời gian",
+    autoFitHint: "Tự nén tốc độ để vừa khung thời gian, tránh lỗi.",
+    addToQueueBtn: "Thêm vào hàng đợi",
+    projectsTitle: "Dự án",
+    deleteProjectTitle: "Xóa dự án và dọn sạch file",
+    emptyTitle: "Từ lời thoại đến giọng Việt",
+    emptyDesc: "Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.",
+    status_queued: "Đang chờ",
+    status_running: "Đang xử lý",
+    status_review: "Chờ duyệt",
+    status_failed: "Cần kiểm tra",
+    status_completed: "Hoàn tất",
+    status_cancelled: "Đã hủy",
+    stepExtract: "1. Trích xuất",
+    stepSTT: "2. Nhận dạng STT",
+    stepTranslate: "3. Dịch thuật",
+    stepTTS: "4. Tạo giọng TTS",
+    stepExport: "5. Ghép lời thoại",
+    stepMix: "6. Phối âm nền",
+    descReview: "Dịch xong · Đang dừng để bạn duyệt bản dịch",
+    descCompleted: "Hoàn tất toàn bộ tiến trình · Đã tạo xong file",
+    descProcessing: "Đang xử lý: {0} {1} - {2}%",
+    descPercentDone: "{0}% hoàn thành",
+    dlHeader: "🎉 Tải Về Kết Quả (Audio & Phụ Đề)",
+    dlCompleted: "Hoàn tất 100%",
+    dlMixedPlayer: "Nghe thử bản phối hoàn chỉnh (Lời Việt + Nền gốc hạ âm):",
+    dlNarrationPlayer: "Nghe thử bản thuyết minh đã ghép:",
+    dlMixedMp3: "🌟 Tải Audio Phối Nền (MP3)",
+    dlMixedMp3Desc: "Lời Việt nổi trên nền gốc tự động hạ (Ducking)",
+    dlMixedWav: "🎙️ Tải Audio Phối Nền (WAV)",
+    dlMixedWavDesc: "Âm thanh phối chuẩn phòng thu lossless",
+    dlNarrMp3: "🎵 Tải Thuyết Minh Riêng (MP3)",
+    dlNarrMp3Desc: "Chỉ có giọng đọc tiếng Việt",
+    dlNarrWav: "🎙️ Tải Thuyết Minh Riêng (WAV)",
+    dlNarrWavDesc: "Giọng đọc gốc chất lượng cao nhất",
+    dlViSrt: "📝 Phụ đề Tiếng Việt (.SRT)",
+    dlViSrtDesc: "Sub chuẩn khớp từng giây",
+    dlSrcSrt: "🌐 Phụ đề {0} (.SRT)",
+    dlSrcSrtDesc: "Sub gốc trích xuất từ video",
+    dlGeneric: "⬇️ Tải {0}",
+    dlAlertFailed: "<strong>⚠️ Chưa tạo được file Audio:</strong> Tiến trình đã dừng trước khi hoàn tất xuất file (có thể do lỗi thời lượng hoặc âm thanh). Hãy bật <b>\"Tự nén âm thanh vừa thời gian\"</b> ở dưới rồi bấm <b>\"Thử lại bước hiện tại\"</b> để tạo file.",
+    retryStepBtn: "🔄 Thử lại bước hiện tại",
+    mixHeader: "🎛️ Phối Âm Nền & Lời Thuyết Minh (Background & Ducking)",
+    mixDuckingLabel: "Tự hạ nền khi có lời đọc (Ducking)",
+    mixDuckingHint: "Tự động giảm âm nền khi có tiếng Việt, trả lại âm lượng khi ngừng.",
+    mixBgLabel: "Âm lượng nền gốc:",
+    mixNarrLabel: "Âm lượng thuyết minh:",
+    mixAttenLabel: "Mức giảm nền (Ducking):",
+    mixPreviewBtn: "🎧 Nghe thử mix (15s)",
+    mixPreviewLoading: "Đang xử lý nghe thử...",
+    mixRemixBtn: "🎛️ Phối lại âm thanh (Remix)",
+    mixStarted: "Đã bắt đầu phối lại âm thanh nền!",
+    mixSaveErr: "Lỗi lưu cài đặt mix: ",
+    mixPreviewErr: "Không thể tạo nghe thử mix",
+    mixRemixErr: "Lỗi remix: ",
+    deleteProjectBtn: "🗑️ Xóa dự án",
+    deleteProjectBtnTitle: "Xóa dự án và dọn sạch toàn bộ file",
+    voiceLabelToolbar: "Giọng đọc: ",
+    pauseReviewShort: "Dừng để duyệt",
+    autoFitShort: "Tự nén âm thanh vừa thời gian",
+    saveTranslationBtn: "Lưu bản dịch",
+    saveGenerateBtn: "Lưu & tạo audio",
+    cancelProcessBtn: "Hủy xử lý",
+    segmentsCountMeta: "{0} · {1} đoạn · {2}",
+    segmentHint: "Nhấn mốc thời gian để nghe lời gốc. Bấm \"Nghe thử\" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.",
+    tabAll: "Tất cả ({0})",
+    tabWarning: "⚠️ Câu vượt thời lượng ({0})",
+    tabAutoTrim: "✂️ Tự cắt từ cho đủ ({0} câu)",
+    tabAutoTrimTitle: "Tự động cắt ngắn số từ của các câu bị dài về giới hạn an toàn",
+    pageCounter: "Trang {0}/{1} ({2} câu)",
+    emptyNoOverDuration: "🎉 Tuyệt vời! Không có câu nào vượt thời lượng.",
+    emptyNoSegments: "Không có đoạn thoại nào.",
+    autoTrimSuccess: "Đã tự động rút gọn {0} câu về độ dài an toàn. Bấm \"Lưu bản dịch\" để xác nhận!",
+    autoTrimAllSafe: "Tất cả các câu đã nằm trong độ dài an toàn.",
+    listenSnippet: "Nghe thử",
+    stopSnippet: "Dừng",
+    listenAria: "Nghe audio tiếng Việt {0}",
+    transAria: "Bản dịch {0}",
+    warnTitleSegment: "Câu vượt thời lượng (+{0}s). Hãy rút gọn số từ.",
+    warnBadge: "⚠️ Vượt +{0}s",
+    timingInfo: "Thực tế: <b>{0}s</b><br>Tối đa: {1}s",
+    timingSafe: "{0}s",
+    wordCountLabel: "Số từ: <b>{0}</b> / Tối đa: ~{1} từ",
+    badgeExcess: "Vượt {0} từ",
+    badgeOk: "Độ dài an toàn ✓",
+    confirmDeleteRunning: "Dự án \"{0}\" ĐANG CHẠY. Bạn có chắc muốn DỪNG XỬ LÝ và XÓA SẠCH toàn bộ file?",
+    confirmDeleteQueued: "Hủy và xóa \"{0}\" khỏi hàng đợi?",
+    confirmDeleteNormal: "Xóa dự án \"{0}\" và xóa sạch toàn bộ file (video, audio...) để tránh rác dung lượng?",
+    toastDeletedProject: "Đã xóa dự án \"{0}\" và dọn sạch file.",
+    toastDeleteErr: "Lỗi xóa dự án: ",
+    confirmDiscardChanges: "Bỏ các chỉnh sửa chưa lưu?",
+    toastUnsavedSnippet: "Bản dịch hoặc giọng chưa lưu. Hãy lưu và tạo lại audio trước khi nghe thử.",
+    toastCantLoadAudio: "Không thể tải audio.",
+    toastSaved: "Đã lưu",
+    toastVoiceChanged: "Đã đổi giọng đọc sang: ",
+    toastPauseOn: "Đã bật: Sẽ dừng lại để bạn duyệt bản dịch",
+    toastPauseOff: "Đã tắt: Sẽ tự động chạy từ đầu tới cuối",
+    toastAutoFitOn: "Đã bật: Tự động nén âm thanh vừa thời gian",
+    toastAutoFitOff: "Đã tắt: Chế độ kiểm tra nghiêm ngặt",
+    toastSelectVideoFirst: "Chọn một video trước.",
+    toastUploadSuccess: "Đã thêm video vào hàng đợi thành công!",
+    toastUploadErr: "Upload lỗi: ",
+    toastUploadNetErr: "Không thể upload. Kiểm tra kết nối.",
+    voiceModalTitle: "🎙️ Thư Viện Giọng Nhân Bản (Voice Cloning)",
+    addVoiceTitle: "Thêm Giọng Clone Mới",
+    addVoiceDesc: "Tải lên đoạn audio mẫu <b>3–8 giây</b>, giọng một người nói rõ ràng, ít tiếng ồn và không lẫn nhạc nền để VieNeu nhân bản giọng tốt nhất.",
+    voiceNamePlaceholder: "Đặt tên giọng (ví dụ: Giọng Thầy Giáo, Giọng Chị Lan...)",
+    createVoiceBtn: "Tạo giọng clone",
+    voiceListTitle: "Danh Sách Giọng Đã Nhân Bản",
+    loadingVoices: "Đang tải danh sách giọng...",
+    noClonedVoices: "Chưa có giọng clone nào. Hãy tải lên file audio mẫu (3–8 giây) ở trên để tạo giọng đầu tiên!",
+    voiceMeta: "Độ dài mẫu: {0}s · Cập nhật: {1}",
+    voicePlaySample: "▶ Nghe mẫu",
+    voicePlayPreview: "🎧 Nghe thử câu",
+    voiceGenPreview: "⚡ Tạo câu thử",
+    voiceGenSending: "Đang gửi...",
+    voiceGenSuccess: "Đã đưa yêu cầu tạo câu nghe thử cho giọng \"{0}\" vào hàng đợi GPU.",
+    deleteVoiceTitle: "Xóa giọng clone này",
+    confirmDeleteVoice: "Bạn có chắc muốn xóa giọng \"{0}\"?",
+    toastDeletedVoice: "Đã xóa giọng \"{0}\".",
+    toastCantDeleteVoice: "Không thể xóa: ",
+    toastPromptVoiceName: "Vui lòng nhập tên cho giọng clone.",
+    toastPromptVoiceFile: "Vui lòng chọn file âm thanh mẫu (3–8 giây).",
+    voiceCreating: "Đang xử lý & chuẩn hóa...",
+    toastVoiceCreated: "Đã tạo thành công giọng clone: \"{0}\" ({1}s)!",
+    toastVoiceCreateErr: "Lỗi tạo giọng: ",
+    usageModalTitle: "📊 Thống Kê Tài Nguyên Hệ Thống (Usage)",
+    loadingUsage: "Đang tải thông số hệ thống...",
+    usageGpuTitle: "🎮 GPU & VRAM",
+    usageCpuTitle: "⚡ CPU & RAM",
+    usageDiskTitle: "💾 Ổ Đĩa Tổng (Partition)",
+    usageBreakdownTitle: "📁 Chi Tiết Ứng Dụng & Model",
+    usageGpuModel: "Model:",
+    usageVramUsed: "VRAM đã dùng:",
+    usageGpuLoad: "Mức tải GPU Core:",
+    usageNoGpu: "Không có GPU NVIDIA",
+    usageCpuCores: "CPU ({0} cores):",
+    usageRamSystem: "RAM (Hệ thống):",
+    usageDiskUsedTotal: "Đã dùng / Tổng:",
+    usageDiskFree: "Còn trống:",
+    usageDiskFull: "{0}% đầy",
+    usageBreakdownVideo: "🎬 Video & File Dự án (data/):",
+    usageBreakdownModels: "🧠 AI Models (GGUF, Whisper, TTS):",
+    usageBreakdownApp: "📦 App & Môi trường (.venv):",
+    usageUpdatedAt: "Cập nhật lúc: {0}",
+    usageLoadErr: "Lỗi khi tải thông số: ",
+    grpTop: "⭐ Đề xuất hàng đầu",
+    grpNorth: "🏙️ Miền Bắc",
+    grpCentral: "🏖️ Miền Trung",
+    grpSouth: "🌴 Miền Nam",
+    grpClone: "🎙️ Giọng Clone Cá Nhân",
+    grpOther: "Giọng khác",
+    lang_ko: "Tiếng Hàn",
+    lang_en: "Tiếng Anh",
+    lang_ja: "Tiếng Nhật",
+    badge_ko: "🇰🇷 Tiếng Hàn",
+    badge_en: "🇺🇸 Tiếng Anh",
+    badge_ja: "🇯🇵 Tiếng Nhật"
+  },
+  en: {
+    headerSubtitle: "Korean, English, Japanese Video → Vietnamese Dubbing · Local GPU",
+    voiceLibTitle: "Manage Cloned Voices (Voice Cloning)",
+    voiceLibBtn: "🎙️ Cloned Voices",
+    usageBtnTitle: "View System Resource Usage (VRAM, CPU, RAM, Disk)",
+    usageBtn: "📊 System Usage",
+    closeTitle: "Close",
+    closeBtn: "Close",
+    refreshTitle: "Refresh",
+    uploadTitle: "Add Video",
+    uploadDesc: "Supports Korean, English, or Japanese videos. Uses first audio track.",
+    sourceLangLabel: "Source Video Language:",
+    langKo: "🇰🇷 Korean",
+    langEn: "🇺🇸 English",
+    langJa: "🇯🇵 Japanese",
+    advancedOptions: "⚙️ Advanced Options",
+    voiceLabel: "Voice:",
+    pauseReviewTitle: "Pause after translation to review and edit before voice synthesis",
+    pauseReviewLabel: "Pause to review translation",
+    pauseReviewHint: "Uncheck to run automatically from start to finish.",
+    autoFitTitle: "Automatically compress audio speed to fit segment duration",
+    autoFitLabel: "Auto-fit audio duration",
+    autoFitHint: "Compresses speech speed to fit time frame and prevent errors.",
+    addToQueueBtn: "Add to Queue",
+    projectsTitle: "Projects",
+    deleteProjectTitle: "Delete project and clear all files",
+    emptyTitle: "From Dialogue to Vietnamese Dub",
+    emptyDesc: "Upload a video to start. Transcribe → Translate → Review → Synthesize → Export.",
+    status_queued: "Queued",
+    status_running: "Processing",
+    status_review: "Review",
+    status_failed: "Failed",
+    status_completed: "Completed",
+    status_cancelled: "Cancelled",
+    stepExtract: "1. Extract",
+    stepSTT: "2. Speech STT",
+    stepTranslate: "3. Translate",
+    stepTTS: "4. Voice TTS",
+    stepExport: "5. Timeline Sync",
+    stepMix: "6. Mix Background",
+    descReview: "Translation complete · Paused for translation review",
+    descCompleted: "Pipeline finished · Output files ready",
+    descProcessing: "Processing: {0} {1} - {2}%",
+    descPercentDone: "{0}% completed",
+    dlHeader: "🎉 Download Results (Audio & Subtitles)",
+    dlCompleted: "100% Completed",
+    dlMixedPlayer: "Preview mixed audio (Vietnamese + Ducked background):",
+    dlNarrationPlayer: "Preview narration audio:",
+    dlMixedMp3: "🌟 Download Mixed Audio (MP3)",
+    dlMixedMp3Desc: "Vietnamese voice with auto-ducked background",
+    dlMixedWav: "🎙️ Download Mixed Audio (WAV)",
+    dlMixedWavDesc: "Lossless studio mixed audio",
+    dlNarrMp3: "🎵 Download Narration Only (MP3)",
+    dlNarrMp3Desc: "Vietnamese narration only",
+    dlNarrWav: "🎙️ Download Narration Only (WAV)",
+    dlNarrWavDesc: "High quality narration audio",
+    dlViSrt: "📝 Vietnamese Subtitles (.SRT)",
+    dlViSrtDesc: "Synchronized subtitles",
+    dlSrcSrt: "🌐 {0} Subtitles (.SRT)",
+    dlSrcSrtDesc: "Original extracted subtitles",
+    dlGeneric: "⬇️ Download {0}",
+    dlAlertFailed: "<strong>⚠️ Audio file not generated yet:</strong> Process stopped before completing export. Enable <b>\"Auto-fit audio duration\"</b> below and click <b>\"Retry current step\"</b> to proceed.",
+    retryStepBtn: "🔄 Retry current step",
+    mixHeader: "🎛️ Background Audio & Narration Mix (Ducking)",
+    mixDuckingLabel: "Auto-duck background when voice plays",
+    mixDuckingHint: "Lowers background audio when narration plays, restores when paused.",
+    mixBgLabel: "Original background volume:",
+    mixNarrLabel: "Narration volume:",
+    mixAttenLabel: "Ducking attenuation:",
+    mixPreviewBtn: "🎧 Preview mix (15s)",
+    mixPreviewLoading: "Generating preview...",
+    mixRemixBtn: "🎛️ Remix Audio",
+    mixStarted: "Started background audio remixing!",
+    mixSaveErr: "Failed to save mix settings: ",
+    mixPreviewErr: "Cannot generate mix preview",
+    mixRemixErr: "Remix error: ",
+    deleteProjectBtn: "🗑️ Delete Project",
+    deleteProjectBtnTitle: "Delete project and clear all files",
+    voiceLabelToolbar: "Voice: ",
+    pauseReviewShort: "Pause for review",
+    autoFitShort: "Auto-fit audio duration",
+    saveTranslationBtn: "Save Translation",
+    saveGenerateBtn: "Save & Generate Audio",
+    cancelProcessBtn: "Cancel Process",
+    segmentsCountMeta: "{0} · {1} segments · {2}",
+    segmentHint: "Click timestamps to play original audio. Click \"Play\" to preview Vietnamese audio. Orange border: exceeds duration.",
+    tabAll: "All ({0})",
+    tabWarning: "⚠️ Over duration ({0})",
+    tabAutoTrim: "✂️ Auto-trim words ({0} segments)",
+    tabAutoTrimTitle: "Automatically trims word count of long sentences to safe limits",
+    pageCounter: "Page {0}/{1} ({2} segments)",
+    emptyNoOverDuration: "🎉 Great! No sentences exceed duration.",
+    emptyNoSegments: "No dialogue segments found.",
+    autoTrimSuccess: "Trimmed {0} segments to safe duration. Click \"Save Translation\" to confirm!",
+    autoTrimAllSafe: "All segments are within safe duration.",
+    listenSnippet: "Play",
+    stopSnippet: "Stop",
+    listenAria: "Play Vietnamese audio {0}",
+    transAria: "Translation {0}",
+    warnTitleSegment: "Sentence exceeds duration (+{0}s). Please shorten word count.",
+    warnBadge: "⚠️ Exceeds +{0}s",
+    timingInfo: "Actual: <b>{0}s</b><br>Max: {1}s",
+    timingSafe: "{0}s",
+    wordCountLabel: "Words: <b>{0}</b> / Max: ~{1} words",
+    badgeExcess: "+{0} words",
+    badgeOk: "Safe length ✓",
+    confirmDeleteRunning: "Project \"{0}\" is RUNNING. Are you sure you want to STOP processing and DELETE all files?",
+    confirmDeleteQueued: "Cancel and remove \"{0}\" from queue?",
+    confirmDeleteNormal: "Delete project \"{0}\" and clear all files (video, audio...) to free disk space?",
+    toastDeletedProject: "Deleted project \"{0}\" and cleared files.",
+    toastDeleteErr: "Delete error: ",
+    confirmDiscardChanges: "Discard unsaved changes?",
+    toastUnsavedSnippet: "Translation or voice unsaved. Save and re-generate audio before previewing.",
+    toastCantLoadAudio: "Cannot load audio.",
+    toastSaved: "Saved",
+    toastVoiceChanged: "Changed voice to: ",
+    toastPauseOn: "Enabled: Will pause for review after translation",
+    toastPauseOff: "Disabled: Will run automatically from start to finish",
+    toastAutoFitOn: "Enabled: Automatically fit audio duration",
+    toastAutoFitOff: "Disabled: Strict timing checks",
+    toastSelectVideoFirst: "Please select a video file first.",
+    toastUploadSuccess: "Added video to queue successfully!",
+    toastUploadErr: "Upload error: ",
+    toastUploadNetErr: "Cannot upload. Check network connection.",
+    voiceModalTitle: "🎙️ Cloned Voice Library (Voice Cloning)",
+    addVoiceTitle: "Add New Cloned Voice",
+    addVoiceDesc: "Upload clean <b>3–8 second</b> audio sample, single speaker, minimal background noise for optimal VieNeu cloning.",
+    voiceNamePlaceholder: "Voice name (e.g. Teacher, Narrator, Storyteller...)",
+    createVoiceBtn: "Create Cloned Voice",
+    voiceListTitle: "Cloned Voices List",
+    loadingVoices: "Loading voice list...",
+    noClonedVoices: "No cloned voices yet. Upload a sample audio (3–8s) above to create your first voice!",
+    voiceMeta: "Sample length: {0}s · Updated: {1}",
+    voicePlaySample: "▶ Sample",
+    voicePlayPreview: "🎧 Preview",
+    voiceGenPreview: "⚡ Generate Preview",
+    voiceGenSending: "Sending...",
+    voiceGenSuccess: "Voice preview generation request for \"{0}\" has been queued to GPU.",
+    deleteVoiceTitle: "Delete this cloned voice",
+    confirmDeleteVoice: "Are you sure you want to delete voice \"{0}\"?",
+    toastDeletedVoice: "Deleted voice \"{0}\".",
+    toastCantDeleteVoice: "Cannot delete: ",
+    toastPromptVoiceName: "Please enter a name for the cloned voice.",
+    toastPromptVoiceFile: "Please select a sample audio file (3–8s).",
+    voiceCreating: "Processing & normalizing...",
+    toastVoiceCreated: "Successfully created cloned voice: \"{0}\" ({1}s)!",
+    toastVoiceCreateErr: "Failed to create voice: ",
+    usageModalTitle: "📊 System Resource Usage",
+    loadingUsage: "Loading system metrics...",
+    usageGpuTitle: "🎮 GPU & VRAM",
+    usageCpuTitle: "⚡ CPU & RAM",
+    usageDiskTitle: "💾 Disk Partition",
+    usageBreakdownTitle: "📁 App & Model Details",
+    usageGpuModel: "Model:",
+    usageVramUsed: "VRAM Used:",
+    usageGpuLoad: "GPU Core Load:",
+    usageNoGpu: "No NVIDIA GPU detected",
+    usageCpuCores: "CPU ({0} cores):",
+    usageRamSystem: "System RAM:",
+    usageDiskUsedTotal: "Used / Total:",
+    usageDiskFree: "Free:",
+    usageDiskFull: "{0}% full",
+    usageBreakdownVideo: "🎬 Videos & Project Files (data/):",
+    usageBreakdownModels: "🧠 AI Models (GGUF, Whisper, TTS):",
+    usageBreakdownApp: "📦 App & Environments (.venv):",
+    usageUpdatedAt: "Updated at: {0}",
+    usageLoadErr: "Failed to load metrics: ",
+    grpTop: "⭐ Top Recommended",
+    grpNorth: "🏙️ Northern Accent",
+    grpCentral: "🏖️ Central Accent",
+    grpSouth: "🌴 Southern Accent",
+    grpClone: "🎙️ Personal Cloned Voices",
+    grpOther: "Other Voices",
+    lang_ko: "Korean",
+    lang_en: "English",
+    lang_ja: "Japanese",
+    badge_ko: "🇰🇷 Korean",
+    badge_en: "🇺🇸 English",
+    badge_ja: "🇯🇵 Japanese"
+  }
+};
+
+function t(key, ...args){
+  let val = (I18N[currentLang] && I18N[currentLang][key] !== undefined)
+    ? I18N[currentLang][key]
+    : ((I18N['vi'] && I18N['vi'][key] !== undefined) ? I18N['vi'][key] : key);
+  if(args.length > 0){
+    args.forEach((arg, i) => {
+      val = String(val).replace(new RegExp(`\\{${i}\\}`, 'g'), arg);
+    });
+  }
+  return val;
+}
+
+function getStatusLabel(state){
+  return t('status_' + state);
+}
+
+const VOICE_LABELS = {
+  vi: {
+    "Hải Đăng": "Hải Đăng (Nam Bắc - Chuẩn/Mặc định)",
+    "Mai Anh": "Mai Anh (Nữ Bắc - Tự nhiên)",
+    "Trúc Ly": "Trúc Ly (Nữ Nam - Truyền cảm)",
+    "Thiện Minh": "Thiện Minh (Nam Bắc - Trầm ấm)",
+    "Thùy Dung": "Thùy Dung (Nữ Nam - Dịu dàng)",
+    "Ngọc Huyền": "Ngọc Huyền (Nữ Bắc - Nhẹ nhàng)",
+    "Quang Sơn": "Quang Sơn (Nam Trung - Truyền cảm)",
+    "Ngọc Trân": "Ngọc Trân (Nữ Trung - Ngọt ngào)",
+    "Thiền Tâm Đức": "Thiền Tâm Đức (Nam - Phật pháp/Trầm)",
+    "Adam bựa": "Adam bựa (Nam - Hài hước/Vlog)",
+    "Minh Đức": "Minh Đức (Nam Bắc)",
+    "Phạm Tuyên": "Phạm Tuyên (Nam Bắc)",
+    "Xuân Vĩnh": "Xuân Vĩnh (Nam Bắc)",
+    "Thanh Bình": "Thanh Bình (Nam Bắc)",
+    "Quốc Tuấn": "Quốc Tuấn (Nam Bắc)",
+    "Ngọc Linh": "Ngọc Linh (Nữ Bắc)",
+    "Đoan Trang": "Đoan Trang (Nữ Bắc)",
+    "Quỳnh Anh": "Quỳnh Anh (Nữ Bắc)",
+    "Thái Sơn": "Thái Sơn (Nam Nam)",
+    "Minh Triết": "Minh Triết (Nam Nam)",
+    "Đức Trí": "Đức Trí (Nam Nam)",
+    "Adam": "Adam (Nam Nam)",
+    "Thục Đoan": "Thục Đoan (Nữ Nam)",
+    "Mỹ Duyên": "Mỹ Duyên (Nữ Nam)",
+    "Kim Thanh": "Kim Thanh (Nữ Nam)"
+  },
+  en: {
+    "Hải Đăng": "Hải Đăng (North Male - Standard/Default)",
+    "Mai Anh": "Mai Anh (North Female - Natural)",
+    "Trúc Ly": "Trúc Ly (South Female - Expressive)",
+    "Thiện Minh": "Thiện Minh (North Male - Deep/Warm)",
+    "Thùy Dung": "Thùy Dung (South Female - Gentle)",
+    "Ngọc Huyền": "Ngọc Huyền (North Female - Soft)",
+    "Quang Sơn": "Quang Sơn (Central Male - Expressive)",
+    "Ngọc Trân": "Ngọc Trân (Central Female - Sweet)",
+    "Thiền Tâm Đức": "Thiền Tâm Đức (Male - Chanting/Deep)",
+    "Adam bựa": "Adam bựa (Male - Humorous/Vlog)",
+    "Minh Đức": "Minh Đức (North Male)",
+    "Phạm Tuyên": "Phạm Tuyên (North Male)",
+    "Xuân Vĩnh": "Xuân Vĩnh (North Male)",
+    "Thanh Bình": "Thanh Bình (North Male)",
+    "Quốc Tuấn": "Quốc Tuấn (North Male)",
+    "Ngọc Linh": "Ngọc Linh (North Female)",
+    "Đoan Trang": "Đoan Trang (North Female)",
+    "Quỳnh Anh": "Quỳnh Anh (North Female)",
+    "Thái Sơn": "Thái Sơn (South Male)",
+    "Minh Triết": "Minh Triết (South Male)",
+    "Đức Trí": "Đức Trí (South Male)",
+    "Adam": "Adam (South Male)",
+    "Thục Đoan": "Thục Đoan (South Female)",
+    "Mỹ Duyên": "Mỹ Duyên (South Female)",
+    "Kim Thanh": "Kim Thanh (South Female)"
+  }
+};
+
+function getVoiceLabel(id, defaultLabel){
+  const dict = VOICE_LABELS[currentLang] || VOICE_LABELS['vi'];
+  return dict[id] || defaultLabel || id;
+}
+
+function getVoiceGroupName(key){
+  const dict = {
+    "⭐ Đề xuất hàng đầu": t('grpTop'),
+    "🏙️ Miền Bắc": t('grpNorth'),
+    "🏖️ Miền Trung": t('grpCentral'),
+    "🌴 Miền Nam": t('grpSouth'),
+    "🎙️ Giọng Clone Cá Nhân": t('grpClone'),
+    "Giọng khác": t('grpOther')
+  };
+  return dict[key] || key;
+}
+
 function stopPreview(){
   previewRequest++;
   if(previewAudio){previewAudio.pause();previewAudio=null;}
   if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
-  if(previewButton){previewButton.textContent='Nghe thử';previewButton=null;}
+  if(previewButton){previewButton.textContent=t('listenSnippet');previewButton=null;}
 }
+
 async function playSnippet(segment,button){
   if(previewButton===button){stopPreview();return;}
   stopPreview();
   if((drafts.get(segment.id)??segment.translation)!==segment.translation || ($('#voice')&&$('#voice').value!==current.voice)){
-    toast('Bản dịch hoặc giọng chưa lưu. Hãy lưu và tạo lại audio trước khi nghe thử.');return;
+    toast(t('toastUnsavedSnippet'));return;
   }
   const request=previewRequest;
   button.disabled=true;
   try{
     const r=await fetch(`/api/projects/${selected}/segments/${encodeURIComponent(segment.id)}/audio`,{cache:'no-store'});
-    if(!r.ok){const error=await r.json().catch(()=>({detail:'Không thể tải audio.'}));throw Error(error.detail);}
+    if(!r.ok){const error=await r.json().catch(()=>({detail:t('toastCantLoadAudio')}));throw Error(error.detail);}
     const blob=await r.blob();
     if(request!==previewRequest)return;
     document.querySelectorAll('video,audio').forEach(media=>media.pause());
     previewUrl=URL.createObjectURL(blob);previewAudio=new Audio(previewUrl);previewButton=button;
-    button.textContent='Dừng';previewAudio.onended=stopPreview;
+    button.textContent=t('stopSnippet');previewAudio.onended=stopPreview;
     await previewAudio.play();
   }catch(e){if(request===previewRequest){stopPreview();toast(e.message);}}
   finally{button.disabled=false;}
 }
+
 const VOICES = [
   { group: "⭐ Đề xuất hàng đầu", items: [
     { id: "Hải Đăng", label: "Hải Đăng (Nam Bắc - Chuẩn/Mặc định)" },
@@ -66,6 +524,7 @@ const VOICES = [
     { id: "Kim Thanh", label: "Kim Thanh (Nữ Nam)" }
   ]}
 ];
+
 let cachedVoicesAll = [];
 async function fetchVoicesAll(){
   try {
@@ -75,21 +534,22 @@ async function fetchVoicesAll(){
   }
   return cachedVoicesAll;
 }
+
 function populateVoiceSelect(select, currentVoice){
   select.replaceChildren();
   const list = cachedVoicesAll.length ? cachedVoicesAll : VOICES.flatMap(g => g.items.map(v => ({...v, group: g.group})));
   const groups = {};
   for(const v of list){
-    const grpName = v.group || 'Khác';
+    const grpName = v.group || 'Giọng khác';
     if(!groups[grpName]) groups[grpName] = [];
     groups[grpName].push(v);
   }
   let matched = false;
   for(const [grpName, items] of Object.entries(groups)){
     const grp = el('optgroup');
-    grp.label = grpName;
+    grp.label = getVoiceGroupName(grpName);
     for(const v of items){
-      const opt = el('option', v.label);
+      const opt = el('option', getVoiceLabel(v.id, v.label));
       opt.value = v.id;
       if(v.id === currentVoice){ opt.selected = true; matched = true; }
       grp.append(opt);
@@ -98,7 +558,7 @@ function populateVoiceSelect(select, currentVoice){
   }
   if(!matched && currentVoice){
     const grp = el('optgroup');
-    grp.label = 'Giọng khác';
+    grp.label = t('grpOther');
     const opt = el('option', currentVoice);
     opt.value = currentVoice;
     opt.selected = true;
@@ -106,6 +566,7 @@ function populateVoiceSelect(select, currentVoice){
     select.prepend(grp);
   }
 }
+
 function buildVoiceSelect(currentVoice){
   const select = el('select');
   select.id = 'voice';
@@ -113,18 +574,21 @@ function buildVoiceSelect(currentVoice){
   select.onchange = ()=>{stopPreview(); dirty = true;};
   return select;
 }
-const labels = {queued:'Đang chờ',running:'Đang xử lý',review:'Chờ duyệt',failed:'Cần kiểm tra',completed:'Hoàn tất',cancelled:'Đã hủy'};
+
 function el(tag, text, cls) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(cls)e.className=cls; return e; }
 function toast(message) { $('#toast').textContent=message; $('#toast').style.display='block'; setTimeout(()=>$('#toast').style.display='none',6000); }
 async function api(path,options={}) { const r=await fetch('/api'+path,options); if(!r.ok){let b=await r.json().catch(()=>({detail:r.statusText}));throw Error(typeof b.detail==='string'?b.detail:JSON.stringify(b.detail));} return r.json(); }
 async function act(action) { try {if(action==='generate'){await save();} await api(`/projects/${selected}/${action}`,{method:'POST'}); dirty=false; await refresh(true);}catch(e){toast(e.message);} }
+
 async function save(){
   if(!current)return;
   for(const s of current.segments){if(drafts.has(s.id))s.translation=drafts.get(s.id);}
   await api(`/projects/${selected}/segments`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({segments:current.segments,voice:$('#voice').value})});
   dirty=false;drafts.clear();
 }
+
 function time(s){return new Date(s*1000).toISOString().slice(11,19);}
+
 function renderSegments(container, editable, warningsMap, list){
   stopPreview();
   container.replaceChildren();
@@ -134,24 +598,24 @@ function renderSegments(container, editable, warningsMap, list){
     const row = el('div', undefined, 'segment' + (w ? ' warning' : ''));
     
     const actions = el('div');
-    const t = el('button', `${time(s.start)} → ${time(s.end)}`, 'time secondary');
-    t.onclick = () => { stopPreview(); $('video').currentTime = s.start; };
-    actions.append(t);
+    const tBtn = el('button', `${time(s.start)} → ${time(s.end)}`, 'time secondary');
+    tBtn.onclick = () => { stopPreview(); $('video').currentTime = s.start; };
+    actions.append(tBtn);
 
     if (w) {
-      actions.append(el('div', `⚠️ Vượt +${w.overflow_seconds}s`, 'warning-badge'));
+      actions.append(el('div', t('warnBadge', w.overflow_seconds), 'warning-badge'));
       const timingBox = el('div', undefined, 'timing-info');
       const maxSec = w.available_seconds ? w.available_seconds : segDuration.toFixed(1);
       const actSec = w.actual_seconds ? w.actual_seconds : (segDuration + w.overflow_seconds).toFixed(1);
-      timingBox.innerHTML = `Thực tế: <b>${actSec}s</b><br>Tối đa: ${maxSec}s`;
+      timingBox.innerHTML = t('timingInfo', actSec, maxSec);
       actions.append(timingBox);
     } else {
-      actions.append(el('div', `${segDuration.toFixed(1)}s`, 'timing-info'));
+      actions.append(el('div', t('timingSafe', segDuration.toFixed(1)), 'timing-info'));
     }
 
-    const listen = el('button', 'Nghe thử', 'secondary');
+    const listen = el('button', t('listenSnippet'), 'secondary');
     listen.style.marginTop = '8px';
-    listen.setAttribute('aria-label', `Nghe audio tiếng Việt ${s.id}`);
+    listen.setAttribute('aria-label', t('listenAria', s.id));
     listen.onclick = () => playSnippet(s, listen);
     actions.append(listen);
     row.append(actions);
@@ -162,8 +626,8 @@ function renderSegments(container, editable, warningsMap, list){
     const area = el('textarea');
     area.value = drafts.get(s.id) ?? s.translation;
     area.disabled = !editable;
-    area.setAttribute('aria-label', `Bản dịch ${s.id}`);
-    if (w) area.title = `Câu vượt thời lượng (+${w.overflow_seconds}s). Hãy rút gọn số từ.`;
+    area.setAttribute('aria-label', t('transAria', s.id));
+    if (w) area.title = t('warnTitleSegment', w.overflow_seconds);
     editCol.append(area);
 
     const counterDiv = el('div', undefined, 'word-counter');
@@ -176,14 +640,14 @@ function renderSegments(container, editable, warningsMap, list){
       counterDiv.replaceChildren();
 
       const labelSpan = el('span');
-      labelSpan.innerHTML = `Số từ: <b>${words}</b> / Tối đa: ~${targetMaxWords} từ`;
+      labelSpan.innerHTML = t('wordCountLabel', words, targetMaxWords);
       counterDiv.append(labelSpan);
 
       if (w || words > targetMaxWords) {
         if (words > targetMaxWords) {
-          counterDiv.append(el('span', `Vượt ${words - targetMaxWords} từ`, 'badge-excess'));
+          counterDiv.append(el('span', t('badgeExcess', words - targetMaxWords), 'badge-excess'));
         } else {
-          counterDiv.append(el('span', 'Độ dài an toàn ✓', 'badge-ok'));
+          counterDiv.append(el('span', t('badgeOk'), 'badge-ok'));
         }
       }
     }
@@ -201,6 +665,7 @@ function renderSegments(container, editable, warningsMap, list){
     container.append(row);
   }
 }
+
 async function initUploadForm(){
   await fetchVoicesAll();
   const uploadVoice = $('#uploadVoice');
@@ -208,14 +673,15 @@ async function initUploadForm(){
     populateVoiceSelect(uploadVoice, 'Hải Đăng');
   }
 }
+
 function renderPipeline(p){
   const steps=[
-    {key:'extract',name:'1. Trích xuất'},
-    {key:'stt',name:'2. Nhận dạng STT'},
-    {key:'translate',name:'3. Dịch thuật'},
-    {key:'tts',name:'4. Tạo giọng TTS'},
-    {key:'export',name:'5. Ghép lời thoại'},
-    {key:'mix',name:'6. Phối âm nền'}
+    {key:'extract',name:t('stepExtract')},
+    {key:'stt',name:t('stepSTT')},
+    {key:'translate',name:t('stepTranslate')},
+    {key:'tts',name:t('stepTTS')},
+    {key:'export',name:t('stepExport')},
+    {key:'mix',name:t('stepMix')}
   ];
   const keys=steps.map(s=>s.key);
   const currentIdx=keys.indexOf(p.step);
@@ -290,30 +756,31 @@ function renderPipeline(p){
   bar.append(fill);
 
   const statusRow=el('div',undefined,'pipeline-status');
-  let detailDesc=p.progress||labels[state]||state;
+  let detailDesc=p.progress||getStatusLabel(state)||state;
   if(state==='review'){
-    detailDesc='Dịch xong · Đang dừng để bạn duyệt bản dịch';
+    detailDesc=t('descReview');
   }else if(state==='completed'){
-    detailDesc='Hoàn tất toàn bộ tiến trình · Đã tạo xong file';
+    detailDesc=t('descCompleted');
   }else if(state==='running'){
     const curName=steps[currentIdx]?steps[currentIdx].name:p.step;
-    detailDesc=`Đang xử lý: ${curName} ${p.progress?`(${p.progress})`:''} - ${stagePct}%`;
+    detailDesc=t('descProcessing', curName, p.progress?`(${p.progress})`:'', stagePct);
   }
   statusRow.append(el('span',detailDesc,'status-desc'));
-  statusRow.append(el('span',`${overallPct}% hoàn thành`,'percent-text'));
+  statusRow.append(el('span',t('descPercentDone', overallPct),'percent-text'));
 
   barWrapper.append(bar,statusRow);
   card.append(stepsEl,barWrapper);
   return card;
 }
+
 function renderDownloadSection(p){
   const hasExports = Array.isArray(p.exports) && p.exports.length > 0;
   if(!hasExports){
     if(p.state === 'failed'){
       const warnBox = el('div', undefined, 'download-alert-failed');
       const msg = el('div', undefined, 'alert-msg');
-      msg.innerHTML = `<strong>⚠️ Chưa tạo được file Audio:</strong> Tiến trình đã dừng trước khi hoàn tất xuất file (có thể do lỗi thời lượng hoặc âm thanh). Hãy bật <b>"Tự nén âm thanh vừa thời gian"</b> ở dưới rồi bấm <b>"Thử lại bước hiện tại"</b> để tạo file.`;
-      const retryBtn = el('button', '🔄 Thử lại bước hiện tại', 'btn-retry');
+      msg.innerHTML = t('dlAlertFailed');
+      const retryBtn = el('button', t('retryStepBtn'), 'btn-retry');
       retryBtn.onclick = () => act('resume');
       warnBox.append(msg, retryBtn);
       return warnBox;
@@ -323,9 +790,9 @@ function renderDownloadSection(p){
 
   const card = el('div', undefined, 'download-card');
   const header = el('div', undefined, 'download-header');
-  header.append(el('h3', '🎉 Tải Về Kết Quả (Audio & Phụ Đề)'));
+  header.append(el('h3', t('dlHeader')));
   if(p.state === 'completed'){
-    header.append(el('span', 'Hoàn tất 100%', 'badge-completed'));
+    header.append(el('span', t('dlCompleted'), 'badge-completed'));
   }
   card.append(header);
 
@@ -335,7 +802,7 @@ function renderDownloadSection(p){
                    p.exports.includes('narration.wav') ? 'narration.wav' : null;
   if(playFile){
     const playerBox = el('div', undefined, 'audio-player-box');
-    const playerTitle = playFile.startsWith('mixed') ? 'Nghe thử bản phối hoàn chỉnh (Lời Việt + Nền gốc hạ âm):' : 'Nghe thử bản thuyết minh đã ghép:';
+    const playerTitle = playFile.startsWith('mixed') ? t('dlMixedPlayer') : t('dlNarrationPlayer');
     const playerLabel = el('div', playerTitle, 'audio-player-label');
     const audio = el('audio');
     audio.controls = true;
@@ -348,19 +815,18 @@ function renderDownloadSection(p){
   const btnGroup = el('div', undefined, 'download-btn-group');
   const stem = (p.name || 'video').replace(/\.[^/.]+$/, '').trim() || 'video';
   const srcLang = p.source_language || 'ko';
-  const langLabels = {ko: 'Tiếng Hàn', en: 'Tiếng Anh', ja: 'Tiếng Nhật'};
-  const srcLabel = langLabels[srcLang] || srcLang.toUpperCase();
+  const srcLabel = t('lang_' + srcLang) || srcLang.toUpperCase();
 
   const meta = {
-    'mixed.mp3': { label: '🌟 Tải Audio Phối Nền (MP3)', primary: true, desc: 'Lời Việt nổi trên nền gốc tự động hạ (Ducking)', dlName: `${stem}_mixed.mp3` },
-    'mixed.wav': { label: '🎙️ Tải Audio Phối Nền (WAV)', primary: false, desc: 'Âm thanh phối chuẩn phòng thu lossless', dlName: `${stem}_mixed.wav` },
-    'narration.mp3': { label: '🎵 Tải Thuyết Minh Riêng (MP3)', primary: false, desc: 'Chỉ có giọng đọc tiếng Việt', dlName: `${stem}_thuyet_minh.mp3` },
-    'narration.wav': { label: '🎙️ Tải Thuyết Minh Riêng (WAV)', primary: false, desc: 'Giọng đọc gốc chất lượng cao nhất', dlName: `${stem}_thuyet_minh.wav` },
-    'vi.srt': { label: '📝 Phụ đề Tiếng Việt (.SRT)', primary: false, desc: 'Sub chuẩn khớp từng giây', dlName: `${stem}_vi.srt` },
-    [`${srcLang}.srt`]: { label: `🌐 Phụ đề ${srcLabel} (.SRT)`, primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_${srcLang}.srt` },
-    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ko.srt` },
-    'en.srt': { label: '🇺🇸 Phụ đề Tiếng Anh (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_en.srt` },
-    'ja.srt': { label: '🇯🇵 Phụ đề Tiếng Nhật (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ja.srt` }
+    'mixed.mp3': { label: t('dlMixedMp3'), primary: true, desc: t('dlMixedMp3Desc'), dlName: `${stem}_mixed.mp3` },
+    'mixed.wav': { label: t('dlMixedWav'), primary: false, desc: t('dlMixedWavDesc'), dlName: `${stem}_mixed.wav` },
+    'narration.mp3': { label: t('dlNarrMp3'), primary: false, desc: t('dlNarrMp3Desc'), dlName: `${stem}_thuyet_minh.mp3` },
+    'narration.wav': { label: t('dlNarrWav'), primary: false, desc: t('dlNarrWavDesc'), dlName: `${stem}_thuyet_minh.wav` },
+    'vi.srt': { label: t('dlViSrt'), primary: false, desc: t('dlViSrtDesc'), dlName: `${stem}_vi.srt` },
+    [`${srcLang}.srt`]: { label: t('dlSrcSrt', srcLabel), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${srcLang}.srt` },
+    'ko.srt': { label: t('dlSrcSrt', t('lang_ko')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ko.srt` },
+    'en.srt': { label: t('dlSrcSrt', t('lang_en')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_en.srt` },
+    'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ja.srt` }
   };
 
   const order = ['mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt'];
@@ -371,7 +837,7 @@ function renderDownloadSection(p){
   });
 
   for(const name of sorted){
-    const info = meta[name] || { label: `⬇️ Tải ${name}`, primary: false, desc: '', dlName: `${stem}_${name}` };
+    const info = meta[name] || { label: t('dlGeneric', name), primary: false, desc: '', dlName: `${stem}_${name}` };
     const a = el('a', undefined, 'btn-download' + (info.primary ? ' primary' : ''));
     a.href = `/api/projects/${p.id}/files/${name}`;
     a.download = info.dlName || name;
@@ -387,10 +853,11 @@ function renderDownloadSection(p){
   card.append(btnGroup);
   return card;
 }
+
 function renderMixCard(p){
   const card = el('div', undefined, 'mix-card');
   const header = el('div', undefined, 'mix-header');
-  header.append(el('h3', '🎛️ Phối Âm Nền & Lời Thuyết Minh (Background & Ducking)'));
+  header.append(el('h3', t('mixHeader')));
   card.append(header);
 
   const grid = el('div', undefined, 'mix-grid');
@@ -400,15 +867,15 @@ function renderMixCard(p){
   const duckCb = el('input');
   duckCb.type = 'checkbox';
   duckCb.checked = (p.mix_ducking !== 0);
-  duckLabel.append(duckCb, el('span', 'Tự hạ nền khi có lời đọc (Ducking)'));
+  duckLabel.append(duckCb, el('span', t('mixDuckingLabel')));
   duckCtrl.append(duckLabel);
-  duckCtrl.append(el('small', 'Tự động giảm âm nền khi có tiếng Việt, trả lại âm lượng khi ngừng.', 'hint-text'));
+  duckCtrl.append(el('small', t('mixDuckingHint'), 'hint-text'));
   grid.append(duckCtrl);
 
   const bgCtrl = el('div', undefined, 'mix-control');
   const bgLabel = el('label');
   const bgValSpan = el('span', `${Math.round((p.mix_background_gain ?? 0.25) * 100)}%`, 'val');
-  bgLabel.append(el('span', 'Âm lượng nền gốc:'), bgValSpan);
+  bgLabel.append(el('span', t('mixBgLabel')), bgValSpan);
   const bgRange = el('input');
   bgRange.type = 'range';
   bgRange.min = '0'; bgRange.max = '100'; bgRange.step = '5';
@@ -420,7 +887,7 @@ function renderMixCard(p){
   const narrCtrl = el('div', undefined, 'mix-control');
   const narrLabel = el('label');
   const narrValSpan = el('span', `${Math.round((p.mix_narration_gain ?? 1.0) * 100)}%`, 'val');
-  narrLabel.append(el('span', 'Âm lượng thuyết minh:'), narrValSpan);
+  narrLabel.append(el('span', t('mixNarrLabel')), narrValSpan);
   const narrRange = el('input');
   narrRange.type = 'range';
   narrRange.min = '20'; narrRange.max = '150'; narrRange.step = '5';
@@ -432,7 +899,7 @@ function renderMixCard(p){
   const attenCtrl = el('div', undefined, 'mix-control');
   const attenLabel = el('label');
   const attenValSpan = el('span', `-${Math.round(p.mix_ducking_attenuation ?? 16)} dB`, 'val');
-  attenLabel.append(el('span', 'Mức giảm nền (Ducking):'), attenValSpan);
+  attenLabel.append(el('span', t('mixAttenLabel')), attenValSpan);
   const attenRange = el('input');
   attenRange.type = 'range';
   attenRange.min = '8'; attenRange.max = '28'; attenRange.step = '2';
@@ -460,7 +927,7 @@ function renderMixCard(p){
       p.mix_narration_gain = parseFloat(narrRange.value) / 100.0;
       p.mix_ducking_attenuation = parseFloat(attenRange.value);
     } catch(err) {
-      toast('Lỗi lưu cài đặt mix: ' + err.message);
+      toast(t('mixSaveErr') + err.message);
     }
   };
 
@@ -470,8 +937,8 @@ function renderMixCard(p){
   attenRange.onchange = saveMixSettings;
 
   const actions = el('div', undefined, 'mix-actions');
-  const previewBtn = el('button', '🎧 Nghe thử mix (15s)', 'secondary');
-  const remixBtn = el('button', '🎛️ Phối lại âm thanh (Remix)');
+  const previewBtn = el('button', t('mixPreviewBtn'), 'secondary');
+  const remixBtn = el('button', t('mixRemixBtn'));
   const playerBox = el('div', undefined, 'mix-preview-player');
   playerBox.hidden = true;
   const audioEl = el('audio');
@@ -480,7 +947,7 @@ function renderMixCard(p){
 
   previewBtn.onclick = async () => {
     previewBtn.disabled = true;
-    previewBtn.textContent = 'Đang xử lý nghe thử...';
+    previewBtn.textContent = t('mixPreviewLoading');
     try {
       await saveMixSettings();
       let startSec = 10;
@@ -489,7 +956,7 @@ function renderMixCard(p){
       }
       const r = await fetch(`/api/projects/${p.id}/mix/preview?start=${startSec}&duration=15`);
       if(!r.ok){
-        const err = await r.json().catch(()=>({detail: 'Không thể tạo nghe thử mix'}));
+        const err = await r.json().catch(()=>({detail: t('mixPreviewErr')}));
         throw Error(err.detail);
       }
       const blob = await r.blob();
@@ -500,7 +967,7 @@ function renderMixCard(p){
       toast(err.message);
     } finally {
       previewBtn.disabled = false;
-      previewBtn.textContent = '🎧 Nghe thử mix (15s)';
+      previewBtn.textContent = t('mixPreviewBtn');
     }
   };
 
@@ -509,10 +976,10 @@ function renderMixCard(p){
     try {
       await saveMixSettings();
       await api(`/projects/${p.id}/remix`, {method: 'POST'});
-      toast('Đã bắt đầu phối lại âm thanh nền!');
+      toast(t('mixStarted'));
       await refresh(true);
     } catch(err) {
-      toast('Lỗi remix: ' + err.message);
+      toast(t('mixRemixErr') + err.message);
     } finally {
       remixBtn.disabled = false;
     }
@@ -522,42 +989,43 @@ function renderMixCard(p){
   card.append(actions, playerBox);
   return card;
 }
+
 async function deleteProject(p){
-  let msg = `Xóa dự án "${p.name}" và xóa sạch toàn bộ file (video, audio...) để tránh rác dung lượng?`;
+  let msg = t('confirmDeleteNormal', p.name);
   if(p.state === 'running'){
-    msg = `Dự án "${p.name}" ĐANG CHẠY. Bạn có chắc muốn DỪNG XỬ LÝ và XÓA SẠCH toàn bộ file?`;
+    msg = t('confirmDeleteRunning', p.name);
   }else if(p.state === 'queued'){
-    msg = `Hủy và xóa "${p.name}" khỏi hàng đợi?`;
+    msg = t('confirmDeleteQueued', p.name);
   }
   if(!confirm(msg)) return;
   try{
     await api(`/projects/${p.id}`, {method: 'DELETE'});
-    toast(`Đã xóa dự án "${p.name}" và dọn sạch file.`);
+    toast(t('toastDeletedProject', p.name));
     if(selected === p.id){
       selected = null;
       current = null;
       dirty = false;
       drafts.clear();
-      $('#workspace').innerHTML = '<div class="empty"><span>◉</span><h2>Từ lời thoại đến giọng Việt</h2><p>Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.</p></div>';
+      $('#workspace').innerHTML = `<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
     }
     await refresh(true);
   }catch(err){
-    toast('Lỗi xóa dự án: ' + err.message);
+    toast(t('toastDeleteErr') + err.message);
   }
 }
+
 function render(){
   stopPreview();
   const w=$('#workspace');w.replaceChildren(); const p=current;
   const heading=el('div',undefined,'heading');
   const hLeft=el('div',undefined,'heading-left');
-  const langLabels = {ko: '🇰🇷 Tiếng Hàn', en: '🇺🇸 Tiếng Anh', ja: '🇯🇵 Tiếng Nhật'};
-  const langPill = el('span', langLabels[p.source_language] || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
-  hLeft.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'), langPill);
+  const langPill = el('span', t('badge_' + p.source_language) || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
+  hLeft.append(el('h2',p.name),el('span',getStatusLabel(p.state)||p.state,'status'), langPill);
   heading.append(hLeft);
 
   const hActions=el('div',undefined,'heading-actions');
-  const delMainBtn=el('button','🗑️ Xóa dự án','btn-danger secondary');
-  delMainBtn.title='Xóa dự án và dọn sạch toàn bộ file';
+  const delMainBtn=el('button',t('deleteProjectBtn'),'btn-danger secondary');
+  delMainBtn.title=t('deleteProjectBtnTitle');
   delMainBtn.onclick=()=>deleteProject(p);
   hActions.append(delMainBtn);
   heading.append(hActions);
@@ -565,18 +1033,18 @@ function render(){
   w.append(renderPipeline(p));
   const dlSec = renderDownloadSection(p);
   if(dlSec) w.append(dlSec);
-  w.append(el('p',`${p.progress} · ${p.segments.length} đoạn · ${time(p.duration)}`));
+  w.append(el('p',t('segmentsCountMeta', p.progress||getStatusLabel(p.state), p.segments.length, time(p.duration))));
   const video=el('video');video.controls=true;video.preload='metadata';video.src=`/api/projects/${p.id}/files/source`;w.append(video);
   if(p.error)w.append(el('pre',p.error,'error'));
   
   const tools=el('div',undefined,'toolbar');
-  tools.append(el('label','Giọng đọc: '));
+  tools.append(el('label',t('voiceLabelToolbar')));
   const voiceSelect=buildVoiceSelect(p.voice);
   voiceSelect.onchange=async()=>{
     stopPreview();dirty=true;
     try{
       await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:voiceSelect.value})});
-      p.voice=voiceSelect.value;toast('Đã đổi giọng đọc sang: '+voiceSelect.value);
+      p.voice=voiceSelect.value;toast(t('toastVoiceChanged')+voiceSelect.value);
     }catch(e){toast(e.message);}
   };
   tools.append(voiceSelect);
@@ -588,10 +1056,10 @@ function render(){
     try{
       await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({pause_review:pauseCb.checked})});
       p.pause_review=pauseCb.checked?1:0;
-      toast(pauseCb.checked?'Đã bật: Sẽ dừng lại để bạn duyệt bản dịch':'Đã tắt: Sẽ tự động chạy từ đầu tới cuối');
+      toast(pauseCb.checked?t('toastPauseOn'):t('toastPauseOff'));
     }catch(e){toast(e.message);pauseCb.checked=!pauseCb.checked;}
   };
-  pauseLabel.append(pauseCb,el('span','Dừng để duyệt'));
+  pauseLabel.append(pauseCb,el('span',t('pauseReviewShort')));
   tools.append(pauseLabel);
 
   const autoFitLabel=el('label',undefined,'checkbox-label');
@@ -601,38 +1069,38 @@ function render(){
     try{
       await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_fit:autoFitCb.checked})});
       p.auto_fit=autoFitCb.checked?1:0;
-      toast(autoFitCb.checked?'Đã bật: Tự động nén âm thanh vừa thời gian':'Đã tắt: Chế độ kiểm tra nghiêm ngặt');
+      toast(autoFitCb.checked?t('toastAutoFitOn'):t('toastAutoFitOff'));
     }catch(e){toast(e.message);autoFitCb.checked=!autoFitCb.checked;}
   };
-  autoFitLabel.append(autoFitCb,el('span','Tự nén âm thanh vừa thời gian'));
+  autoFitLabel.append(autoFitCb,el('span',t('autoFitShort')));
   tools.append(autoFitLabel);
 
   const editable=['review','failed','completed'].includes(p.state);
   if(editable&&p.segments.length){
-    const saveButton=el('button','Lưu bản dịch','secondary');saveButton.onclick=async()=>{try{await save();toast('Đã lưu');await refresh(true);}catch(e){toast(e.message);}};tools.append(saveButton);
-    const generate=el('button','Lưu & tạo audio');generate.onclick=()=>act('generate');tools.append(generate);
+    const saveButton=el('button',t('saveTranslationBtn'),'secondary');saveButton.onclick=async()=>{try{await save();toast(t('toastSaved'));await refresh(true);}catch(e){toast(e.message);}};tools.append(saveButton);
+    const generate=el('button',t('saveGenerateBtn'));generate.onclick=()=>act('generate');tools.append(generate);
   }
-  if(['running','queued'].includes(p.state)){const b=el('button','Hủy xử lý','secondary');b.onclick=()=>act('cancel');tools.append(b);}
-  if(['failed','cancelled'].includes(p.state)){const b=el('button','Thử lại bước hiện tại','secondary');b.onclick=()=>act('resume');tools.append(b);}
+  if(['running','queued'].includes(p.state)){const b=el('button',t('cancelProcessBtn'),'secondary');b.onclick=()=>act('cancel');tools.append(b);}
+  if(['failed','cancelled'].includes(p.state)){const b=el('button',t('retryStepBtn'),'secondary');b.onclick=()=>act('resume');tools.append(b);}
   w.append(tools);
   w.append(renderMixCard(p));
   if(p.segments.length){
-    w.append(el('p','Nhấn mốc thời gian để nghe lời gốc. Bấm "Nghe thử" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.','hint'));
+    w.append(el('p',t('segmentHint'),'hint'));
 
     const warningsMap = new Map((p.warnings||[]).map(x=>[x.id, x]));
     const warnCount = warningsMap.size;
 
     const filterTabs = el('div', undefined, 'filter-tabs');
-    const allTab = el('button', `Tất cả (${p.segments.length})`, 'tab-btn' + (!filterWarnings ? ' active' : ''));
+    const allTab = el('button', t('tabAll', p.segments.length), 'tab-btn' + (!filterWarnings ? ' active' : ''));
     filterTabs.append(allTab);
 
-    const warnTab = el('button', `⚠️ Câu vượt thời lượng (${warnCount})`, 'tab-btn warning-tab' + (filterWarnings ? ' active' : ''));
+    const warnTab = el('button', t('tabWarning', warnCount), 'tab-btn warning-tab' + (filterWarnings ? ' active' : ''));
     if(warnCount === 0) warnTab.style.opacity = '0.6';
     filterTabs.append(warnTab);
 
     if(warnCount > 0 && editable){
-      const trimBtn = el('button', `✂️ Tự cắt từ cho đủ (${warnCount} câu)`, 'tab-btn auto-trim-btn');
-      trimBtn.title = 'Tự động cắt ngắn số từ của các câu bị dài về giới hạn an toàn';
+      const trimBtn = el('button', t('tabAutoTrim', warnCount), 'tab-btn auto-trim-btn');
+      trimBtn.title = t('tabAutoTrimTitle');
       trimBtn.onclick = () => {
         let trimmed = 0;
         for(const s of p.segments){
@@ -650,10 +1118,10 @@ function render(){
           }
         }
         if(trimmed > 0){
-          toast(`Đã tự động rút gọn ${trimmed} câu về độ dài an toàn. Bấm "Lưu bản dịch" để xác nhận!`);
+          toast(t('autoTrimSuccess', trimmed));
           show();
         } else {
-          toast('Tất cả các câu đã nằm trong độ dài an toàn.');
+          toast(t('autoTrimAllSafe'));
         }
       };
       filterTabs.append(trimBtn);
@@ -677,14 +1145,14 @@ function render(){
 
       if(list.length === 0){
         rows.replaceChildren();
-        rows.append(el('p', filterWarnings ? '🎉 Tuyệt vời! Không có câu nào vượt thời lượng.' : 'Không có đoạn thoại nào.', 'hint'));
-        counter.textContent = '0 câu';
+        rows.append(el('p', filterWarnings ? t('emptyNoOverDuration') : t('emptyNoSegments'), 'hint'));
+        counter.textContent = t('pageCounter', 0, maxPage, 0);
         prev.disabled = true;
         next.disabled = true;
         return;
       }
 
-      counter.textContent = `Trang ${page+1}/${maxPage} (${list.length} câu)`;
+      counter.textContent = t('pageCounter', page+1, maxPage, list.length);
       prev.disabled = page === 0;
       next.disabled = (page+1)*40 >= list.length;
       renderSegments(rows, editable, warningsMap, list);
@@ -696,6 +1164,7 @@ function render(){
     prev.onclick=()=>{page--;show();};next.onclick=()=>{page++;show();};pages.append(prev,counter,next);w.append(pages,rows);show();
   }
 }
+
 async function refresh(force=false){
   if(busy)return;busy=true;
   try{
@@ -703,20 +1172,20 @@ async function refresh(force=false){
     for(const p of all){
       const row=el('div',undefined,'project-row'+(p.id===selected?' active':''));
       const b=el('button',p.name,'project-select-btn');
-      b.append(el('small',`${labels[p.state]||p.state} · ${p.progress||p.step}`));
+      b.append(el('small',`${getStatusLabel(p.state)||p.state} · ${p.progress||p.step}`));
       b.onclick=async()=>{
-        if(dirty&&!confirm('Bỏ các chỉnh sửa chưa lưu?'))return;
+        if(dirty&&!confirm(t('confirmDiscardChanges')))return;
         selected=p.id;page=0;dirty=false;drafts.clear();filterWarnings=false;await refresh(true);
       };
       const delBtn=el('button','🗑️','project-del-btn');
-      delBtn.title='Xóa dự án và dọn sạch file';
+      delBtn.title=t('deleteProjectTitle');
       delBtn.onclick=(e)=>{e.stopPropagation();deleteProject(p);};
       row.append(b,delBtn);
       $('#projects').append(row);
     }
     if(!all.length){
       selected=null;current=null;
-      $('#workspace').innerHTML='<div class="empty"><span>◉</span><h2>Từ lời thoại đến giọng Việt</h2><p>Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.</p></div>';
+      $('#workspace').innerHTML=`<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
     }else{
       if(!selected||!all.some(x=>x.id===selected))selected=all[0].id;
       if(selected&&!dirty&&!previewAudio){
@@ -727,9 +1196,10 @@ async function refresh(force=false){
     }
   }catch(e){toast(e.message);}finally{busy=false;}
 }
+
 $('#upload').onclick=()=>{
   const fileInput=$('#file');
-  const file=fileInput.files[0];if(!file){toast('Chọn một video trước.');return;}
+  const file=fileInput.files[0];if(!file){toast(t('toastSelectVideoFirst'));return;}
   const form=new FormData();
   form.append('file',file);
   const voiceEl=$('#uploadVoice');
@@ -751,20 +1221,21 @@ $('#upload').onclick=()=>{
       dirty=false;
       drafts.clear();
       refresh(true);
-      toast('Đã thêm video vào hàng đợi thành công!');
+      toast(t('toastUploadSuccess'));
     }else{
-      toast('Upload lỗi: '+xhr.responseText);
+      toast(t('toastUploadErr')+xhr.responseText);
     }
     $('#upload').disabled=false;
     $('#uploadProgress').hidden=true;
   };
   xhr.onerror=()=>{
-    toast('Không thể upload. Kiểm tra kết nối.');
+    toast(t('toastUploadNetErr'));
     $('#upload').disabled=false;
     $('#uploadProgress').hidden=true;
   };
   xhr.send(form);
 };
+
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 
 function makeProgressBar(pct){
@@ -787,7 +1258,7 @@ function formatBytes(bytes){
 async function loadUsage(){
   const content = $('#usageContent');
   const timeEl = $('#usageTime');
-  content.innerHTML = '<div class="usage-loading">Đang tải thông số hệ thống...</div>';
+  content.innerHTML = `<div class="usage-loading">${t('loadingUsage')}</div>`;
   try {
     const data = await api('/usage');
     content.replaceChildren();
@@ -797,7 +1268,7 @@ async function loadUsage(){
     // 1. GPU & VRAM Card
     const gpuCard = el('div', undefined, 'usage-card');
     const gpuTitle = el('div', undefined, 'usage-card-title');
-    gpuTitle.append(el('span', '🎮 GPU & VRAM'));
+    gpuTitle.append(el('span', t('usageGpuTitle')));
     if(data.gpu && data.gpu.available){
       gpuTitle.append(el('span', `${data.gpu.vram_usage_pct}% VRAM`, 'val-highlight'));
     }
@@ -805,21 +1276,21 @@ async function loadUsage(){
 
     if(data.gpu && data.gpu.available){
       const rowName = el('div', undefined, 'usage-stat-row');
-      rowName.append(el('span', 'Model:', 'label'), el('span', data.gpu.name, 'val'));
+      rowName.append(el('span', t('usageGpuModel'), 'label'), el('span', data.gpu.name, 'val'));
       gpuCard.append(rowName);
 
       const usedGb = (data.gpu.vram_used_mb / 1024).toFixed(1);
       const totGb = (data.gpu.vram_total_mb / 1024).toFixed(1);
       const rowVram = el('div', undefined, 'usage-stat-row');
-      rowVram.append(el('span', 'VRAM đã dùng:', 'label'), el('span', `${usedGb} GB / ${totGb} GB`, 'val'));
+      rowVram.append(el('span', t('usageVramUsed'), 'label'), el('span', `${usedGb} GB / ${totGb} GB`, 'val'));
       gpuCard.append(rowVram, makeProgressBar(data.gpu.vram_usage_pct));
 
       const rowUtil = el('div', undefined, 'usage-stat-row');
-      rowUtil.append(el('span', 'Mức tải GPU Core:', 'label'), el('span', `${data.gpu.gpu_util_pct}%`, 'val'));
+      rowUtil.append(el('span', t('usageGpuLoad'), 'label'), el('span', `${data.gpu.gpu_util_pct}%`, 'val'));
       gpuCard.append(rowUtil, makeProgressBar(data.gpu.gpu_util_pct));
     } else {
       const rowMsg = el('div', undefined, 'usage-stat-row');
-      rowMsg.append(el('span', data.gpu ? data.gpu.name : 'Không có GPU NVIDIA', 'hint'));
+      rowMsg.append(el('span', data.gpu ? data.gpu.name : t('usageNoGpu'), 'hint'));
       gpuCard.append(rowMsg);
     }
     grid.append(gpuCard);
@@ -827,16 +1298,16 @@ async function loadUsage(){
     // 2. CPU & RAM Card
     const cpuCard = el('div', undefined, 'usage-card');
     const cpuTitle = el('div', undefined, 'usage-card-title');
-    cpuTitle.append(el('span', '⚡ CPU & RAM'));
+    cpuTitle.append(el('span', t('usageCpuTitle')));
     cpuTitle.append(el('span', `${data.cpu.usage_pct}% CPU`, 'val-highlight'));
     cpuCard.append(cpuTitle);
 
     const rowCpu = el('div', undefined, 'usage-stat-row');
-    rowCpu.append(el('span', `CPU (${data.cpu.cores} cores):`, 'label'), el('span', `${data.cpu.usage_pct}%`, 'val'));
+    rowCpu.append(el('span', t('usageCpuCores', data.cpu.cores), 'label'), el('span', `${data.cpu.usage_pct}%`, 'val'));
     cpuCard.append(rowCpu, makeProgressBar(data.cpu.usage_pct));
 
     const rowRam = el('div', undefined, 'usage-stat-row');
-    rowRam.append(el('span', 'RAM (Hệ thống):', 'label'), el('span', `${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_pct}%)`, 'val'));
+    rowRam.append(el('span', t('usageRamSystem'), 'label'), el('span', `${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_pct}%)`, 'val'));
     cpuCard.append(rowRam, makeProgressBar(data.ram.usage_pct));
 
     grid.append(cpuCard);
@@ -844,43 +1315,43 @@ async function loadUsage(){
     // 3. Disk Partition Card
     const diskCard = el('div', undefined, 'usage-card');
     const diskTitle = el('div', undefined, 'usage-card-title');
-    diskTitle.append(el('span', '💾 Ổ Đĩa Tổng (Partition)'));
-    diskTitle.append(el('span', `${data.disk.usage_pct}% đầy`, 'val-highlight'));
+    diskTitle.append(el('span', t('usageDiskTitle')));
+    diskTitle.append(el('span', t('usageDiskFull', data.disk.usage_pct), 'val-highlight'));
     diskCard.append(diskTitle);
 
     const rowDisk = el('div', undefined, 'usage-stat-row');
-    rowDisk.append(el('span', 'Đã dùng / Tổng:', 'label'), el('span', `${data.disk.used_gb} GB / ${data.disk.total_gb} GB`, 'val'));
+    rowDisk.append(el('span', t('usageDiskUsedTotal'), 'label'), el('span', `${data.disk.used_gb} GB / ${data.disk.total_gb} GB`, 'val'));
     const rowFree = el('div', undefined, 'usage-stat-row');
-    rowFree.append(el('span', 'Còn trống:', 'label'), el('span', `${data.disk.free_gb} GB`, 'val'));
+    rowFree.append(el('span', t('usageDiskFree'), 'label'), el('span', `${data.disk.free_gb} GB`, 'val'));
     diskCard.append(rowDisk, makeProgressBar(data.disk.usage_pct), rowFree);
     grid.append(diskCard);
 
     // 4. Breakdown Card
     const breakCard = el('div', undefined, 'usage-card');
     const breakTitle = el('div', undefined, 'usage-card-title');
-    breakTitle.append(el('span', '📁 Chi Tiết Ứng Dụng & Model'));
+    breakTitle.append(el('span', t('usageBreakdownTitle')));
     breakCard.append(breakTitle);
 
     const bd = data.disk.breakdown || {};
     const bList = el('div', undefined, 'breakdown-list');
     
     const b1 = el('div', undefined, 'breakdown-item');
-    b1.append(el('span', '🎬 Video & File Dự án (data/):', 'item-name'), el('span', formatBytes(bd.video_and_data_bytes || 0), 'item-val'));
+    b1.append(el('span', t('usageBreakdownVideo'), 'item-name'), el('span', formatBytes(bd.video_and_data_bytes || 0), 'item-val'));
     
     const b2 = el('div', undefined, 'breakdown-item');
-    b2.append(el('span', '🧠 AI Models (GGUF, Whisper, TTS):', 'item-name'), el('span', formatBytes(bd.models_bytes || 0), 'item-val'));
+    b2.append(el('span', t('usageBreakdownModels'), 'item-name'), el('span', formatBytes(bd.models_bytes || 0), 'item-val'));
     
     const b3 = el('div', undefined, 'breakdown-item');
-    b3.append(el('span', '📦 App & Môi trường (.venv):', 'item-name'), el('span', formatBytes(bd.app_and_env_bytes || 0), 'item-val'));
+    b3.append(el('span', t('usageBreakdownApp'), 'item-name'), el('span', formatBytes(bd.app_and_env_bytes || 0), 'item-val'));
     
     bList.append(b1, b2, b3);
     breakCard.append(bList);
     grid.append(breakCard);
 
     content.append(grid);
-    if(timeEl) timeEl.textContent = `Cập nhật lúc: ${new Date().toLocaleTimeString()}`;
+    if(timeEl) timeEl.textContent = t('usageUpdatedAt', new Date().toLocaleTimeString());
   } catch(err) {
-    content.innerHTML = `<div class="error">Lỗi khi tải thông số: ${err.message}</div>`;
+    content.innerHTML = `<div class="error">${t('usageLoadErr')}${err.message}</div>`;
   }
 }
 
@@ -903,7 +1374,7 @@ function initUsageModal(){
 async function loadVoiceLibrary(){
   const listEl = $('#voiceList');
   if(!listEl) return;
-  listEl.innerHTML = '<div class="usage-loading">Đang tải danh sách giọng...</div>';
+  listEl.innerHTML = `<div class="usage-loading">${t('loadingVoices')}</div>`;
   try {
     const voices = await api('/voices');
     await fetchVoicesAll();
@@ -911,7 +1382,7 @@ async function loadVoiceLibrary(){
     if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
     listEl.replaceChildren();
     if(!voices.length){
-      listEl.innerHTML = '<p class="hint-text" style="text-align:center;padding:20px">Chưa có giọng clone nào. Hãy tải lên file audio mẫu (3–8 giây) ở trên để tạo giọng đầu tiên!</p>';
+      listEl.innerHTML = `<p class="hint-text" style="text-align:center;padding:20px">${t('noClonedVoices')}</p>`;
       return;
     }
     for(const v of voices){
@@ -919,11 +1390,11 @@ async function loadVoiceLibrary(){
       const info = el('div', undefined, 'voice-info');
       const nameEl = el('div', undefined, 'voice-name');
       nameEl.append(el('span', '🎙️ ' + v.name));
-      const metaEl = el('div', `Độ dài mẫu: ${v.duration}s · Cập nhật: ${new Date(v.created * 1000).toLocaleDateString()}`, 'voice-meta');
+      const metaEl = el('div', t('voiceMeta', v.duration, new Date(v.created * 1000).toLocaleDateString()), 'voice-meta');
       info.append(nameEl, metaEl);
 
       const actions = el('div', undefined, 'voice-actions');
-      const sampleBtn = el('button', '▶ Nghe mẫu', 'voice-btn-sm secondary');
+      const sampleBtn = el('button', t('voicePlaySample'), 'voice-btn-sm secondary');
       sampleBtn.onclick = () => {
         stopPreview();
         const a = new Audio(`/api/voices/${v.id}/sample`);
@@ -932,7 +1403,7 @@ async function loadVoiceLibrary(){
       actions.append(sampleBtn);
 
       if(v.has_preview){
-        const prevBtn = el('button', '🎧 Nghe thử câu', 'voice-btn-sm secondary');
+        const prevBtn = el('button', t('voicePlayPreview'), 'voice-btn-sm secondary');
         prevBtn.onclick = () => {
           stopPreview();
           const a = new Audio(`/api/voices/${v.id}/preview?t=${Date.now()}`);
@@ -941,34 +1412,34 @@ async function loadVoiceLibrary(){
         actions.append(prevBtn);
       }
 
-      const genPrevBtn = el('button', '⚡ Tạo câu thử', 'voice-btn-sm secondary');
+      const genPrevBtn = el('button', t('voiceGenPreview'), 'voice-btn-sm secondary');
       genPrevBtn.onclick = async () => {
         genPrevBtn.disabled = true;
-        genPrevBtn.textContent = 'Đang gửi...';
+        genPrevBtn.textContent = t('voiceGenSending');
         try {
           await api(`/voices/${v.id}/preview`, {method: 'POST'});
-          toast(`Đã đưa yêu cầu tạo câu nghe thử cho giọng "${v.name}" vào hàng đợi GPU.`);
+          toast(t('voiceGenSuccess', v.name));
           await refresh(true);
         } catch(err) {
           toast(err.message);
         } finally {
           genPrevBtn.disabled = false;
-          genPrevBtn.textContent = '⚡ Tạo câu thử';
+          genPrevBtn.textContent = t('voiceGenPreview');
         }
       };
       actions.append(genPrevBtn);
 
       const delBtn = el('button', '🗑️', 'voice-btn-sm btn-danger');
-      delBtn.title = 'Xóa giọng clone này';
+      delBtn.title = t('deleteVoiceTitle');
       delBtn.onclick = async () => {
-        if(!confirm(`Bạn có chắc muốn xóa giọng "${v.name}"?`)) return;
+        if(!confirm(t('confirmDeleteVoice', v.name))) return;
         try {
           await api(`/voices/${v.id}`, {method: 'DELETE'});
-          toast(`Đã xóa giọng "${v.name}".`);
+          toast(t('toastDeletedVoice', v.name));
           await loadVoiceLibrary();
           await refresh(true);
         } catch(err) {
-          toast('Không thể xóa: ' + err.message);
+          toast(t('toastCantDeleteVoice') + err.message);
         }
       };
       actions.append(delBtn);
@@ -977,7 +1448,7 @@ async function loadVoiceLibrary(){
       listEl.append(item);
     }
   } catch(err) {
-    listEl.innerHTML = `<div class="error">Lỗi tải danh sách: ${err.message}</div>`;
+    listEl.innerHTML = `<div class="error">${err.message}</div>`;
   }
 }
 
@@ -999,31 +1470,78 @@ function initVoiceModal(){
     submitBtn.onclick = async () => {
       const name = $('#voiceNameInput').value.trim();
       const file = $('#voiceFileInput').files[0];
-      if(!name){ toast('Vui lòng nhập tên cho giọng clone.'); return; }
-      if(!file){ toast('Vui lòng chọn file âm thanh mẫu (3–8 giây).'); return; }
+      if(!name){ toast(t('toastPromptVoiceName')); return; }
+      if(!file){ toast(t('toastPromptVoiceFile')); return; }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Đang xử lý & chuẩn hóa...';
+      submitBtn.textContent = t('voiceCreating');
       try {
         const form = new FormData();
         form.append('name', name);
         form.append('file', file);
         const res = await api('/voices', {method: 'POST', body: form});
-        toast(`Đã tạo thành công giọng clone: "${res.name}" (${res.duration}s)!`);
+        toast(t('toastVoiceCreated', res.name, res.duration));
         $('#voiceNameInput').value = '';
         $('#voiceFileInput').value = '';
         await loadVoiceLibrary();
         await refresh(true);
       } catch(err) {
-        toast('Lỗi tạo giọng: ' + err.message);
+        toast(t('toastVoiceCreateErr') + err.message);
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Tạo giọng clone';
+        submitBtn.textContent = t('createVoiceBtn');
       }
     };
   }
 }
 
+function setUiLanguage(lang){
+  currentLang = (lang === 'en') ? 'en' : 'vi';
+  localStorage.setItem('vietvoice_ui_lang', currentLang);
+  document.documentElement.lang = currentLang;
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.getAttribute('data-i18n');
+    if(k && I18N[currentLang] && I18N[currentLang][k] !== undefined){
+      el.innerHTML = I18N[currentLang][k];
+    }
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const k = el.getAttribute('data-i18n-title');
+    if(k && I18N[currentLang] && I18N[currentLang][k] !== undefined){
+      el.title = I18N[currentLang][k];
+    }
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const k = el.getAttribute('data-i18n-placeholder');
+    if(k && I18N[currentLang] && I18N[currentLang][k] !== undefined){
+      el.placeholder = I18N[currentLang][k];
+    }
+  });
+
+  const langSelect = $('#uiLangSelect');
+  if(langSelect && langSelect.value !== currentLang) langSelect.value = currentLang;
+
+  const uploadVoice = $('#uploadVoice');
+  if(uploadVoice) populateVoiceSelect(uploadVoice, uploadVoice.value || 'Hải Đăng');
+
+  const voiceSelect = $('#voice');
+  if(voiceSelect && current) populateVoiceSelect(voiceSelect, current.voice);
+
+  if(current) render();
+  refresh(true);
+}
+
+function initLanguageSwitch(){
+  const langSelect = $('#uiLangSelect');
+  if(langSelect){
+    langSelect.value = currentLang;
+    langSelect.onchange = () => setUiLanguage(langSelect.value);
+  }
+  setUiLanguage(currentLang);
+}
+
+initLanguageSwitch();
 initUploadForm();
 initUsageModal();
 initVoiceModal();
