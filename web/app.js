@@ -822,7 +822,18 @@ function buildVoiceSelect(currentVoice){
   const select = el('select');
   select.id = 'voice';
   populateVoiceSelect(select, currentVoice);
-  select.onchange = ()=>{stopPreview(); dirty = true;};
+  select.onchange = ()=>{
+    stopPreview();
+    dirty = true;
+    if(current){
+      current.voice = select.value;
+      if(!current.multi_speaker && current.segments){
+        for(const s of current.segments){
+          s.voice = select.value;
+        }
+      }
+    }
+  };
   return select;
 }
 
@@ -856,7 +867,14 @@ async function act(action) { try {if(action==='generate'){await save();} await a
 async function save(){
   if(!current)return;
   for(const s of current.segments){if(drafts.has(s.id))s.translation=drafts.get(s.id);}
-  const voiceVal = current.voice || 'Hải Đăng';
+  const voiceEl = $('#voice');
+  const voiceVal = (voiceEl ? voiceEl.value : current.voice) || 'Hải Đăng';
+  current.voice = voiceVal;
+  if(!current.multi_speaker && current.segments){
+    for(const s of current.segments){
+      s.voice = voiceVal;
+    }
+  }
   await api(`/projects/${selected}/segments`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({segments:current.segments,voice:voiceVal})});
   dirty=false;drafts.clear();
 }
@@ -1544,9 +1562,18 @@ function render(){
   if(editable&&p.segments.length){
     const saveButton=el('button',t('saveTranslationBtn'),'secondary');
     saveButton.onclick=async()=>{try{await save();toast(t('toastSaved'));await refresh(true);}catch(e){toast(e.message);}};
-    const generate=el('button',t('saveGenerateBtn'));
+    const generate=el('button', (p.state === 'completed') ? ('🔄 ' + t('saveGenerateBtn')) : t('saveGenerateBtn'), 'primary');
     generate.onclick=()=>act('generate');
-    actBar.append(saveButton, generate);
+    if(!p.multi_speaker){
+      const voiceWrap = el('div', undefined, 'toolbar-voice-group');
+      const voiceLabel = el('label', '🎙️ ' + t('voiceLabel') + ' ');
+      voiceLabel.htmlFor = 'voice';
+      const voiceSelect = buildVoiceSelect(p.voice);
+      voiceWrap.append(voiceLabel, voiceSelect);
+      actBar.append(voiceWrap, saveButton, generate);
+    } else {
+      actBar.append(saveButton, generate);
+    }
   }
   if(['ready'].includes(p.state)){
     const startBtn=el('button', '▶ ' + t('startProcessBtn'), 'primary');

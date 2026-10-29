@@ -50,6 +50,54 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.put(f'/api/projects/{pid}/segments', json={
             'segments': segments, 'voice': 'Hải Đăng'}).status_code, 409)
 
+    def test_completed_project_change_voice_and_regenerate(self):
+        from unittest.mock import MagicMock
+        from app.model_worker import synthesize
+        pid = self.create()
+        segments = self.review(pid)
+        p = core.folder(pid)
+        # Mock completed project with initial voice Hải Đăng
+        core.update(pid, state='completed', step='mux', voice='Hải Đăng')
+        (p / 'tts-manifest.json').write_text('[]')
+        (p / 'narration.wav').write_bytes(b'old narration')
+
+        # User changes voice to 'Mai Anh' and clicks "Lưu & tạo audio" (PUT segments then POST generate)
+        r_put = self.client.put(f'/api/projects/{pid}/segments', json={'segments': segments, 'voice': 'Mai Anh'})
+        self.assertEqual(r_put.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['voice'], 'Mai Anh')
+        # segments.json updated to Mai Anh
+        segs_saved = core.read_json(p / 'segments.json')
+        self.assertEqual(segs_saved[0]['voice'], 'Mai Anh')
+        # old manifest and outputs invalidated
+        self.assertFalse((p / 'tts-manifest.json').exists())
+        self.assertFalse((p / 'narration.wav').exists())
+
+        # Generate action can be called directly
+        r_gen = self.client.post(f'/api/projects/{pid}/generate')
+        self.assertEqual(r_gen.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['step'], 'tts')
+
+        # Test synthesize generates with new voice
+        mock_model = MagicMock()
+        mock_model.infer.return_value = b'audio'
+        # Create valid 1-second wav file for fake wav duration reading
+        import io
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b'\x01\x00' * 24000)
+        valid_wav = buf.getvalue()
+        mock_model.save = lambda res, path: Path(path).write_bytes(valid_wav)
+
+        synthesize(pid, model=mock_model)
+        manifest = core.read_json(p / 'tts-manifest.json')
+        expected_key = core.tts_key(segments[0]['translation'], 'Mai Anh')
+        self.assertIn(expected_key, manifest[0]['file'])
+        # Mock infer was called with voice='Mai Anh'
+        mock_model.infer.assert_called_with(segments[0]['translation'], voice='Mai Anh')
+
     def test_reject_invalid_timeline_and_ids(self):
         pid = self.create()
         segments = self.review(pid)

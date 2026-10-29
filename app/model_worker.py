@@ -251,7 +251,11 @@ def synthesize(pid, model=None):
     from app.core import db
     with db() as c:
         row = c.execute('SELECT voice, voice_male, voice_female, multi_speaker FROM projects WHERE id=?', (pid,)).fetchone()
-        project_voice = row['voice'] if row and 'voice' in row.keys() and row['voice'] else 'Hải Đăng'
+        row = dict(row) if row else {}
+        project_voice = row.get('voice') or 'Hải Đăng'
+        multi_speaker = row.get('multi_speaker', 0)
+        voice_male = row.get('voice_male') or 'Hải Đăng'
+        voice_female = row.get('voice_female') or 'Mai Anh'
         all_voices = [dict(v) for v in c.execute('SELECT * FROM voices')]
         v_map = {v['id']: v for v in all_voices}
     p = folder(pid)
@@ -279,7 +283,17 @@ def synthesize(pid, model=None):
         text = s['translation'].strip()
         if not text:
             raise ValueError(f"Missing translation: {s['id']}")
-        seg_voice = s.get('voice') or project_voice
+        if not multi_speaker:
+            seg_voice = project_voice
+        else:
+            gender = s.get('gender')
+            if gender == 'female':
+                seg_voice = s.get('voice') or voice_female
+            elif gender == 'male':
+                seg_voice = s.get('voice') or voice_male
+            else:
+                seg_voice = s.get('voice') or project_voice
+        s['voice'] = seg_voice
         key = tts_key(text, seg_voice)
         path = p / 'tts' / f'{key}.wav'
         if not path.exists():
@@ -300,6 +314,7 @@ def synthesize(pid, model=None):
         manifest.append({'id': s['id'], 'file': str(path), 'duration': seconds})
         write_json(p / 'tts-manifest.json', manifest)
         update(pid, progress=f'TTS {i+1}/{len(segments)}')
+    write_json(p / 'segments.json', segments)
 
 
 if __name__ == '__main__':

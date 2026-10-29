@@ -260,10 +260,18 @@ def edit(pid: str, body: Edit):
         if s.end <= s.start or s.start < previous_end or s.end > row['duration'] + 0.1:
             raise HTTPException(400, 'Invalid or overlapping timeline')
         previous_end = s.end
-    write_json(folder(pid) / 'segments.json', [s.model_dump() for s in body.segments])
-    for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt'):
+    new_voice = body.voice.strip()
+    multi = row.get('multi_speaker', 0)
+    segs_to_write = []
+    for s in body.segments:
+        s_dict = s.model_dump()
+        if not multi:
+            s_dict['voice'] = new_voice
+        segs_to_write.append(s_dict)
+    write_json(folder(pid) / 'segments.json', segs_to_write)
+    for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt', 'tts-manifest.json'):
         (folder(pid) / name).unlink(missing_ok=True)
-    update(pid, state='review', step='tts', voice=body.voice, error=None)
+    update(pid, state='review', step='tts', voice=new_voice, error=None)
     return {'ok': True}
 
 
@@ -330,6 +338,32 @@ def update_settings(pid: str, body: ProjectSettings):
     if body.trim_threshold_pct is not None:
         values['trim_threshold_pct'] = max(100, min(200, int(body.trim_threshold_pct)))
     if values:
+        if 'voice' in values and values['voice'] != row.get('voice'):
+            p_dir = folder(pid)
+            (p_dir / 'tts-manifest.json').unlink(missing_ok=True)
+            for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3'):
+                (p_dir / name).unlink(missing_ok=True)
+            if (p_dir / 'segments.json').exists() and not row.get('multi_speaker'):
+                segs = read_json(p_dir / 'segments.json', [])
+                for s in segs:
+                    s['voice'] = values['voice']
+                write_json(p_dir / 'segments.json', segs)
+
+        if ('voice_male' in values or 'voice_female' in values) and row.get('multi_speaker'):
+            p_dir = folder(pid)
+            (p_dir / 'tts-manifest.json').unlink(missing_ok=True)
+            for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3'):
+                (p_dir / name).unlink(missing_ok=True)
+            if (p_dir / 'segments.json').exists():
+                segs = read_json(p_dir / 'segments.json', [])
+                vm = values.get('voice_male', row.get('voice_male') or 'Hải Đăng')
+                vf = values.get('voice_female', row.get('voice_female') or 'Mai Anh')
+                for s in segs:
+                    if s.get('gender') == 'female':
+                        s['voice'] = vf
+                    elif s.get('gender') == 'male':
+                        s['voice'] = vm
+                write_json(p_dir / 'segments.json', segs)
         update(pid, **values)
     return {'ok': True}
 
@@ -392,12 +426,14 @@ def action(pid: str, action: str):
             raise HTTPException(409, 'Cần có audio thuyết minh/phối âm trước khi ghép vào video')
         update(pid, state='queued', step='mux', cancel=0, error=None, completed_at=None, progress='Đang chờ ghép vào video')
         return {'ok': True}
-    if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled'):
+    if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled', 'completed'):
         raise HTTPException(409, 'Action unavailable')
     if action == 'generate':
         segments = read_json(folder(pid) / 'segments.json', [])
         if not segments or any(not s.get('translation', '').strip() for s in segments):
             raise HTTPException(400, 'Every segment needs a translation')
+        for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'tts-manifest.json'):
+            (folder(pid) / name).unlink(missing_ok=True)
     update(pid, state='queued', cancel=0, error=None, completed_at=None,
            started_at=time.time() if action == 'start' or not row.get('started_at') else row.get('started_at'),
            step='tts' if action == 'generate' else row['step'],

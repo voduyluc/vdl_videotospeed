@@ -171,6 +171,9 @@
 .warn-filter-group{display:inline-flex;align-items:center;gap:6px}
 .warn-ratio-select{min-width:170px;padding:6px 10px;font-size:12px;background:#161d26;border:1px solid var(--line);border-radius:6px;color:var(--text);height:34px;cursor:pointer}
 
+.toolbar-voice-group{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text);margin-right:6px}
+.toolbar-voice-group select{background:#161d26;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;min-width:180px;height:34px;cursor:pointer}
+
 /* Mix Controls Card */
 .mix-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:16px 0}
 .mix-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
