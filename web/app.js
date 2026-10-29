@@ -271,7 +271,19 @@ const I18N = {
     badge_ko: "🇰🇷 Tiếng Hàn",
     badge_en: "🇺🇸 Tiếng Anh",
     badge_ja: "🇯🇵 Tiếng Nhật",
-    badge_zh: "🇨🇳 Tiếng Trung"
+    badge_zh: "🇨🇳 Tiếng Trung",
+    versionHistoryLabel: "Lịch sử phiên bản:",
+    verComplete: "Đầy đủ Audio & Video",
+    verAudioOnly: "Có Audio",
+    verSubtitlesOnly: "Chỉ có phụ đề",
+    verCurrent: "Hiện tại",
+    verPendingHint: "Phiên bản này mới được tạo và chỉ có file phụ đề, chưa có audio/video. Nhấn nút <strong>\"Tạo Audio\"</strong> ở thanh công cụ phía trên để tổng hợp giọng nói.",
+    restoreVerBtn: "Khôi phục bản này",
+    restoreVerTitle: "Đặt phiên bản này làm phiên bản chính hiện tại",
+    restoreVerConfirm: "Bạn có chắc muốn khôi phục phiên bản {0} (Giọng {1}) làm phiên bản hiện tại?",
+    restoreVerSuccess: "Đã khôi phục phiên bản {0} thành công!",
+    watchVerVideo: "Xem video ({0})",
+    playingVerVideo: "Đang phát video phiên bản {0}"
   },
   en: {
     addProjectBtn: "➕ Add New Video",
@@ -537,7 +549,19 @@ const I18N = {
     badge_ko: "🇰🇷 Korean",
     badge_en: "🇺🇸 English",
     badge_ja: "🇯🇵 Japanese",
-    badge_zh: "🇨🇳 Chinese"
+    badge_zh: "🇨🇳 Chinese",
+    versionHistoryLabel: "Version History:",
+    verComplete: "Audio & Video Ready",
+    verAudioOnly: "Audio Only",
+    verSubtitlesOnly: "Subtitles Only",
+    verCurrent: "Current",
+    verPendingHint: "This version has subtitle files only, no audio/video yet. Click <strong>\"Generate Audio\"</strong> on the toolbar above to synthesize voice.",
+    restoreVerBtn: "Restore This Version",
+    restoreVerTitle: "Restore this version as active current version",
+    restoreVerConfirm: "Are you sure you want to restore version {0} (Voice {1}) as the current version?",
+    restoreVerSuccess: "Successfully restored version {0}!",
+    watchVerVideo: "Watch Video ({0})",
+    playingVerVideo: "Playing video for version {0}"
   }
 };
 
@@ -1303,8 +1327,10 @@ function renderPipeline(p){
 }
 
 function renderDownloadSection(p){
+  const versions = Array.isArray(p.versions) ? p.versions : [];
   const hasExports = Array.isArray(p.exports) && p.exports.length > 0;
-  if(!hasExports){
+  const hasAnyVersionExports = versions.some(v => v.exports && v.exports.length > 0);
+  if(!hasExports && !hasAnyVersionExports){
     if(p.state === 'failed'){
       const warnBox = el('div', undefined, 'download-alert-failed');
       const msg = el('div', undefined, 'alert-msg');
@@ -1316,6 +1342,21 @@ function renderDownloadSection(p){
     }
     return null;
   }
+
+  window.selectedProjectVersion = window.selectedProjectVersion || {};
+  let activeVerId = window.selectedProjectVersion[p.id];
+  if(!activeVerId || !versions.some(v => v.id === activeVerId)){
+    activeVerId = p.current_version_id || (versions[0] ? versions[0].id : 'v1.0');
+    window.selectedProjectVersion[p.id] = activeVerId;
+  }
+  const curVer = versions.find(v => v.id === activeVerId) || {
+    id: activeVerId,
+    voice: p.voice,
+    is_current: true,
+    has_audio: hasExports,
+    has_video: p.exports && p.exports.includes('dubbed_video.mp4'),
+    exports: p.exports || []
+  };
 
   const container = el('div', undefined, 'download-section-container');
   if(p.state === 'review' && p.step === 'mux'){
@@ -1335,36 +1376,116 @@ function renderDownloadSection(p){
   const header = el('div', undefined, 'download-header');
   const hLeft = el('div', undefined, 'download-header-left');
   hLeft.append(el('h3', t('dlHeader')));
-  if(p.state === 'completed'){
+  if(p.state === 'completed' && curVer.is_current){
     hLeft.append(el('span', t('dlCompleted'), 'badge-completed'));
   }
   header.append(hLeft);
 
-  const hasDubbed = p.exports.includes('dubbed_video.mp4');
+  const curExports = curVer.exports || [];
+  const hasDubbed = curExports.includes('dubbed_video.mp4');
   const hActions = el('div', undefined, 'download-header-actions');
-  const muxActionBtn = el('button', '🎬 ' + (hasDubbed ? t('remuxVideoBtn') : t('muxVideoBtn')), hasDubbed ? 'secondary' : 'btn-mux-action');
-  muxActionBtn.style.fontSize = '12px';
-  muxActionBtn.style.padding = '6px 14px';
-  muxActionBtn.onclick = () => act('mux');
-  hActions.append(muxActionBtn);
+  if(curVer.is_current && (curVer.has_audio || p.state === 'completed')){
+    const muxActionBtn = el('button', '🎬 ' + (hasDubbed ? t('remuxVideoBtn') : t('muxVideoBtn')), hasDubbed ? 'secondary' : 'btn-mux-action');
+    muxActionBtn.style.fontSize = '12px';
+    muxActionBtn.style.padding = '6px 14px';
+    muxActionBtn.onclick = () => act('mux');
+    hActions.append(muxActionBtn);
+  }
   header.append(hActions);
-
   card.append(header);
 
-  const playFile = p.exports.includes('mixed.mp3') ? 'mixed.mp3' :
-                   p.exports.includes('mixed.wav') ? 'mixed.wav' :
-                   p.exports.includes('narration.mp3') ? 'narration.mp3' :
-                   p.exports.includes('narration.wav') ? 'narration.wav' : null;
+  // Version History Menu Bar
+  if(versions.length > 0){
+    const verBar = el('div', undefined, 'version-history-bar');
+    const verLeft = el('div', undefined, 'version-history-left');
+
+    const verLabel = el('label', '📜 ' + t('versionHistoryLabel') + ' ', 'version-label');
+    verLabel.htmlFor = 'versionSelect_' + p.id;
+
+    const verSelect = el('select', undefined, 'version-select');
+    verSelect.id = 'versionSelect_' + p.id;
+    for(const v of versions){
+      const opt = el('option');
+      opt.value = v.id;
+      let statusTag = '';
+      if(v.has_audio && v.has_video){
+        statusTag = ` (${t('verComplete')})`;
+      } else if(v.has_audio){
+        statusTag = ` (${t('verAudioOnly')})`;
+      } else {
+        statusTag = ` (${t('verSubtitlesOnly')})`;
+      }
+      const currentTag = v.is_current ? ` [${t('verCurrent')}]` : '';
+      opt.textContent = `${v.id} - Giọng ${v.voice}${statusTag}${currentTag}`;
+      if(v.id === activeVerId){
+        opt.selected = true;
+      }
+      verSelect.append(opt);
+    }
+    verSelect.onchange = (e) => {
+      window.selectedProjectVersion[p.id] = e.target.value;
+      renderWorkspace();
+    };
+
+    verLeft.append(verLabel, verSelect);
+    verBar.append(verLeft);
+
+    const verActions = el('div', undefined, 'version-history-actions');
+    if(!curVer.is_current){
+      const restoreBtn = el('button', '🔄 ' + t('restoreVerBtn'), 'btn-restore-ver secondary');
+      restoreBtn.title = t('restoreVerTitle');
+      restoreBtn.onclick = async () => {
+        if(!confirm(t('restoreVerConfirm', curVer.id, curVer.voice))) return;
+        try {
+          await api(`/projects/${p.id}/versions/${curVer.id}/restore`, { method: 'POST' });
+          toast(t('restoreVerSuccess', curVer.id));
+          window.selectedProjectVersion[p.id] = curVer.id;
+          await loadProject(p.id);
+        } catch(err){
+          toast(err.message);
+        }
+      };
+      verActions.append(restoreBtn);
+    }
+    if(hasDubbed){
+      const watchBtn = el('button', '▶️ ' + t('watchVerVideo', curVer.id), 'secondary');
+      watchBtn.style.fontSize = '12px';
+      watchBtn.style.padding = '4px 10px';
+      watchBtn.onclick = () => {
+        const vEl = $('video');
+        if(vEl){
+          vEl.src = `/api/projects/${p.id}/files/dubbed_video.mp4?v=${curVer.id}`;
+          vEl.scrollIntoView({ behavior: 'smooth' });
+          vEl.play().catch(()=>{});
+          toast(t('playingVerVideo', curVer.id));
+        }
+      };
+      verActions.append(watchBtn);
+    }
+    if(verActions.children.length > 0){
+      verBar.append(verActions);
+    }
+    card.append(verBar);
+  }
+
+  const playFile = curExports.includes('mixed.mp3') ? 'mixed.mp3' :
+                   curExports.includes('mixed.wav') ? 'mixed.wav' :
+                   curExports.includes('narration.mp3') ? 'narration.mp3' :
+                   curExports.includes('narration.wav') ? 'narration.wav' : null;
   if(playFile){
     const playerBox = el('div', undefined, 'audio-player-box');
     const playerTitle = playFile.startsWith('mixed') ? t('dlMixedPlayer') : t('dlNarrationPlayer');
-    const playerLabel = el('div', playerTitle, 'audio-player-label');
+    const playerLabel = el('div', `${playerTitle} — ${curVer.id} (Giọng ${curVer.voice})`, 'audio-player-label');
     const audio = el('audio');
     audio.controls = true;
     audio.preload = 'metadata';
-    audio.src = `/api/projects/${p.id}/files/${playFile}`;
+    audio.src = `/api/projects/${p.id}/files/${playFile}?v=${curVer.id}`;
     playerBox.append(playerLabel, audio);
     card.append(playerBox);
+  } else if(!curVer.has_audio && !curVer.has_video){
+    const pendingBox = el('div', undefined, 'version-pending-banner');
+    pendingBox.innerHTML = `ℹ️ <strong>${curVer.id} (Giọng ${curVer.voice})</strong>: ${t('verPendingHint')}`;
+    card.append(pendingBox);
   }
 
   const btnGroup = el('div', undefined, 'download-btn-group');
@@ -1373,33 +1494,33 @@ function renderDownloadSection(p){
   const srcLabel = t('lang_' + srcLang) || srcLang.toUpperCase();
 
   const meta = {
-    'dubbed_video.mp4': { label: t('dlDubbedVideo'), primary: true, desc: t('dlDubbedVideoDesc'), dlName: `${stem}_thuyet_minh.mp4` },
-    'mixed.mp3': { label: t('dlMixedMp3'), primary: !hasDubbed, desc: t('dlMixedMp3Desc'), dlName: `${stem}_mixed.mp3` },
-    'mixed.wav': { label: t('dlMixedWav'), primary: false, desc: t('dlMixedWavDesc'), dlName: `${stem}_mixed.wav` },
-    'narration.mp3': { label: t('dlNarrMp3'), primary: false, desc: t('dlNarrMp3Desc'), dlName: `${stem}_thuyet_minh.mp3` },
-    'narration.wav': { label: t('dlNarrWav'), primary: false, desc: t('dlNarrWavDesc'), dlName: `${stem}_thuyet_minh.wav` },
-    'vi.srt': { label: t('dlViSrt'), primary: false, desc: t('dlViSrtDesc'), dlName: `${stem}_vi.srt` },
-    [`${srcLang}.srt`]: { label: t('dlSrcSrt', srcLabel), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${srcLang}.srt` },
-    'ko.srt': { label: t('dlSrcSrt', t('lang_ko')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ko.srt` },
-    'en.srt': { label: t('dlSrcSrt', t('lang_en')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_en.srt` },
-    'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ja.srt` },
-    'zh.srt': { label: t('dlSrcSrt', t('lang_zh')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_zh.srt` }
+    'dubbed_video.mp4': { label: t('dlDubbedVideo'), primary: true, desc: t('dlDubbedVideoDesc'), dlName: `${stem}_${curVer.id}_thuyet_minh.mp4` },
+    'mixed.mp3': { label: t('dlMixedMp3'), primary: !hasDubbed, desc: t('dlMixedMp3Desc'), dlName: `${stem}_${curVer.id}_mixed.mp3` },
+    'mixed.wav': { label: t('dlMixedWav'), primary: false, desc: t('dlMixedWavDesc'), dlName: `${stem}_${curVer.id}_mixed.wav` },
+    'narration.mp3': { label: t('dlNarrMp3'), primary: false, desc: t('dlNarrMp3Desc'), dlName: `${stem}_${curVer.id}_thuyet_minh.mp3` },
+    'narration.wav': { label: t('dlNarrWav'), primary: false, desc: t('dlNarrWavDesc'), dlName: `${stem}_${curVer.id}_thuyet_minh.wav` },
+    'vi.srt': { label: t('dlViSrt'), primary: false, desc: t('dlViSrtDesc'), dlName: `${stem}_${curVer.id}_vi.srt` },
+    [`${srcLang}.srt`]: { label: t('dlSrcSrt', srcLabel), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${curVer.id}_${srcLang}.srt` },
+    'ko.srt': { label: t('dlSrcSrt', t('lang_ko')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${curVer.id}_ko.srt` },
+    'en.srt': { label: t('dlSrcSrt', t('lang_en')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${curVer.id}_en.srt` },
+    'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${curVer.id}_ja.srt` },
+    'zh.srt': { label: t('dlSrcSrt', t('lang_zh')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${curVer.id}_zh.srt` }
   };
 
   const order = ['dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt', 'zh.srt'];
-  const sorted = [...p.exports].sort((a,b) => {
+  const sorted = [...curExports].sort((a,b) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
 
   for(const name of sorted){
-    const info = meta[name] || { label: t('dlGeneric', name), primary: false, desc: '', dlName: `${stem}_${name}` };
+    const info = meta[name] || { label: t('dlGeneric', name), primary: false, desc: '', dlName: `${stem}_${curVer.id}_${name}` };
     const a = el('a', undefined, 'btn-download' + (info.primary ? ' primary' : ''));
-    a.href = `/api/projects/${p.id}/files/${name}`;
+    a.href = `/api/projects/${p.id}/files/${name}?v=${curVer.id}`;
     a.download = info.dlName || name;
     
-    const iconLabel = el('span', info.label, 'btn-download-title');
+    const iconLabel = el('span', `${info.label} (${curVer.id})`, 'btn-download-title');
     a.append(iconLabel);
     if(info.desc){
       a.append(el('span', info.desc, 'btn-download-desc'));
@@ -1831,7 +1952,12 @@ async function refresh(force=false){
         const isRunning = current && current.state === 'running';
         if(!dirty || isRunning){
           const p = await api(`/projects/${selected}`);
-          const stateChanged = force || !current || p.id !== current.id || p.state !== current.state;
+          const versionChanged = current && (p.current_version_id !== current.current_version_id);
+          if(versionChanged){
+            window.selectedProjectVersion = window.selectedProjectVersion || {};
+            window.selectedProjectVersion[p.id] = p.current_version_id;
+          }
+          const stateChanged = force || !current || p.id !== current.id || p.state !== current.state || versionChanged;
           const progressChanged = current && (p.progress !== current.progress);
           if(stateChanged){
             current = p;

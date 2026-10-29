@@ -665,6 +665,73 @@ class ApiTests(unittest.TestCase):
         sent_body = json.loads(call_kwargs['json']['messages'][1]['content'])
         self.assertIn('max_words', sent_body['segments'][0])
 
+    def test_version_history_archiving_and_cleanup(self):
+        # 1. Create completed project with v1.0
+        pid = self.create()
+        p_dir = core.folder(pid)
+        core.write_json(p_dir / 'segments.json', [{'id': 's1', 'start': 0, 'end': 2, 'source': 'hi', 'translation': 'chào', 'voice': 'Hải Đăng'}])
+        (p_dir / 'narration.wav').write_bytes(b'wav_v1_0')
+        (p_dir / 'mixed.mp3').write_bytes(b'mp3_v1_0')
+        (p_dir / 'dubbed_video.mp4').write_bytes(b'video_v1_0')
+        (p_dir / 'vi.srt').write_text('1\n00:00:00,000 --> 00:00:02,000\nchào\n', encoding='utf-8')
+        core.update(pid, state='completed', step='mux', voice='Hải Đăng')
+
+        # Check detail returns v1.0
+        r_det = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(r_det['current_version_id'], 'v1.0')
+        self.assertEqual(len(r_det['versions']), 1)
+        self.assertTrue(r_det['versions'][0]['has_audio'])
+        self.assertTrue(r_det['versions'][0]['has_video'])
+
+        # 2. Change voice after Done -> archives v1.0 and automatically creates v1.1
+        r_change = self.client.patch(f'/api/projects/{pid}/settings', json={'voice': 'Mai Anh'})
+        self.assertEqual(r_change.status_code, 200)
+
+        # Working directory audio/video removed for v1.1
+        self.assertFalse((p_dir / 'narration.wav').exists())
+        self.assertFalse((p_dir / 'dubbed_video.mp4').exists())
+        self.assertTrue((p_dir / 'vi.srt').exists())
+
+        # Detail has v1.1 (current, no audio yet) and v1.0 (archived, has audio & video)
+        r_det2 = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(r_det2['current_version_id'], 'v1.1')
+        self.assertEqual(len(r_det2['versions']), 2)
+        v1_1 = r_det2['versions'][0]
+        v1_0 = r_det2['versions'][1]
+        self.assertEqual(v1_1['id'], 'v1.1')
+        self.assertFalse(v1_1['has_audio'])
+        self.assertFalse(v1_1['has_video'])
+        self.assertEqual(v1_0['id'], 'v1.0')
+        self.assertTrue(v1_0['has_audio'])
+        self.assertTrue(v1_0['has_video'])
+
+        # Files endpoint serves v1.0 with ?v=v1.0
+        r_v1_audio = self.client.get(f'/api/projects/{pid}/files/mixed.mp3?v=v1.0')
+        self.assertEqual(r_v1_audio.status_code, 200)
+        self.assertEqual(r_v1_audio.content, b'mp3_v1_0')
+
+        r_v1_vid = self.client.get(f'/api/projects/{pid}/files/dubbed_video.mp4?v=v1.0')
+        self.assertEqual(r_v1_vid.status_code, 200)
+        self.assertEqual(r_v1_vid.content, b'video_v1_0')
+
+        # Current version v1.1 has no video yet -> 404
+        r_v1_1_vid = self.client.get(f'/api/projects/{pid}/files/dubbed_video.mp4')
+        self.assertEqual(r_v1_1_vid.status_code, 404)
+
+        # 3. Test restore v1.0
+        r_res = self.client.post(f'/api/projects/{pid}/versions/v1.0/restore')
+        self.assertEqual(r_res.status_code, 200)
+        self.assertTrue((p_dir / 'dubbed_video.mp4').exists())
+        self.assertEqual((p_dir / 'dubbed_video.mp4').read_bytes(), b'video_v1_0')
+
+        # 4. Deleting project must delete all versions and directories
+        r_del = self.client.delete(f'/api/projects/{pid}')
+        self.assertEqual(r_del.status_code, 200)
+        self.assertFalse(p_dir.exists())
+        with core.db() as c:
+            rows = c.execute('SELECT * FROM project_versions WHERE project_id=?', (pid,)).fetchall()
+            self.assertEqual(len(rows), 0)
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

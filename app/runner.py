@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from app.core import DATA, ROOT, db, folder, init_db, python_for, read_json, update
+from app.versions import get_project_versions
 
 stopping = False
 child = None
@@ -172,13 +173,25 @@ def main():
                         update(pid, state='queued', step='mux', progress='Tự động ghép vào video')
                 else:
                     update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
+                    try:
+                        get_project_versions(pid, row)
+                    except Exception:
+                        pass
             elif step == 'mux':
                 update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
+                try:
+                    get_project_versions(pid, row)
+                except Exception:
+                    pass
             elif step in pipeline_steps and pipeline_steps.index(step) + 1 < len(pipeline_steps):
                 next_step = pipeline_steps[pipeline_steps.index(step) + 1]
                 update(pid, state='queued', step=next_step)
             else:
                 update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
+                try:
+                    get_project_versions(pid, row)
+                except Exception:
+                    pass
 
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.core import DATA, ROOT, db, duration, folder, init_db, read_json, run, subtitles, tts_key, update, wav_duration, write_json
+from app.versions import get_project_versions, archive_and_create_new_version, restore_version
 
 init_db()
 
@@ -228,6 +229,9 @@ def detail(pid: str):
         for name in (f'{src_lang}.srt', 'vi.srt'):
             if name not in result['exports']:
                 result['exports'].append(name)
+    ver_info = get_project_versions(pid, result)
+    result['versions'] = ver_info.get('versions', [])
+    result['current_version_id'] = ver_info.get('current_version_id', 'v1.0')
     return result
 
 
@@ -269,8 +273,15 @@ def edit(pid: str, body: Edit):
             s_dict['voice'] = new_voice
         segs_to_write.append(s_dict)
     write_json(folder(pid) / 'segments.json', segs_to_write)
-    for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt', 'tts-manifest.json'):
-        (folder(pid) / name).unlink(missing_ok=True)
+    p_dir = folder(pid)
+    has_audio = any((p_dir / f).exists() for f in ('mixed.wav', 'mixed.mp3', 'narration.wav', 'narration.mp3'))
+    has_video = (p_dir / 'dubbed_video.mp4').exists()
+    voice_changed = (new_voice != row.get('voice')) and not multi
+    if voice_changed and (has_audio or has_video or row.get('state') == 'completed'):
+        archive_and_create_new_version(pid, row, new_voice=new_voice)
+    else:
+        for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'tts-manifest.json'):
+            (p_dir / name).unlink(missing_ok=True)
     update(pid, state='review', step='tts', voice=new_voice, error=None)
     return {'ok': True}
 
@@ -338,32 +349,49 @@ def update_settings(pid: str, body: ProjectSettings):
     if body.trim_threshold_pct is not None:
         values['trim_threshold_pct'] = max(100, min(200, int(body.trim_threshold_pct)))
     if values:
-        if 'voice' in values and values['voice'] != row.get('voice'):
-            p_dir = folder(pid)
-            (p_dir / 'tts-manifest.json').unlink(missing_ok=True)
-            for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3'):
-                (p_dir / name).unlink(missing_ok=True)
-            if (p_dir / 'segments.json').exists() and not row.get('multi_speaker'):
-                segs = read_json(p_dir / 'segments.json', [])
-                for s in segs:
-                    s['voice'] = values['voice']
-                write_json(p_dir / 'segments.json', segs)
-
+        p_dir = folder(pid)
+        has_audio = any((p_dir / f).exists() for f in ('mixed.wav', 'mixed.mp3', 'narration.wav', 'narration.mp3'))
+        has_video = (p_dir / 'dubbed_video.mp4').exists()
+        voice_changed = False
+        if 'voice' in values and values['voice'] != row.get('voice') and not row.get('multi_speaker'):
+            voice_changed = True
         if ('voice_male' in values or 'voice_female' in values) and row.get('multi_speaker'):
-            p_dir = folder(pid)
+            vm = values.get('voice_male', row.get('voice_male'))
+            vf = values.get('voice_female', row.get('voice_female'))
+            if vm != row.get('voice_male') or vf != row.get('voice_female'):
+                voice_changed = True
+
+        if voice_changed and (has_audio or has_video or row.get('state') == 'completed'):
+            archive_and_create_new_version(
+                pid, row,
+                new_voice=values.get('voice'),
+                new_voice_male=values.get('voice_male'),
+                new_voice_female=values.get('voice_female')
+            )
+            values['state'] = 'review'
+            values['step'] = 'tts'
+            values['progress'] = 'Đã tạo phiên bản mới (chưa có audio/video)'
+        elif voice_changed:
             (p_dir / 'tts-manifest.json').unlink(missing_ok=True)
             for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3'):
                 (p_dir / name).unlink(missing_ok=True)
-            if (p_dir / 'segments.json').exists():
-                segs = read_json(p_dir / 'segments.json', [])
-                vm = values.get('voice_male', row.get('voice_male') or 'Hải Đăng')
-                vf = values.get('voice_female', row.get('voice_female') or 'Mai Anh')
-                for s in segs:
-                    if s.get('gender') == 'female':
-                        s['voice'] = vf
-                    elif s.get('gender') == 'male':
-                        s['voice'] = vm
-                write_json(p_dir / 'segments.json', segs)
+
+        if 'voice' in values and (p_dir / 'segments.json').exists() and not row.get('multi_speaker'):
+            segs = read_json(p_dir / 'segments.json', [])
+            for s in segs:
+                s['voice'] = values['voice']
+            write_json(p_dir / 'segments.json', segs)
+
+        if ('voice_male' in values or 'voice_female' in values) and row.get('multi_speaker') and (p_dir / 'segments.json').exists():
+            segs = read_json(p_dir / 'segments.json', [])
+            vm = values.get('voice_male', row.get('voice_male') or 'Hải Đăng')
+            vf = values.get('voice_female', row.get('voice_female') or 'Mai Anh')
+            for s in segs:
+                if s.get('gender') == 'female':
+                    s['voice'] = vf
+                elif s.get('gender') == 'male':
+                    s['voice'] = vm
+            write_json(p_dir / 'segments.json', segs)
         update(pid, **values)
     return {'ok': True}
 
@@ -454,6 +482,7 @@ def delete_project(pid: str):
                 break
     with db() as c:
         c.execute('DELETE FROM projects WHERE id=?', (pid,))
+        c.execute('DELETE FROM project_versions WHERE project_id=?', (pid,))
     p_folder = DATA / pid
     if p_folder.exists():
         shutil.rmtree(p_folder, ignore_errors=True)
@@ -488,12 +517,40 @@ def make_content_disposition(filename: str, disposition: str = 'attachment') -> 
 
 
 @app.get('/api/projects/{pid}/files/{name}')
-def asset(pid: str, name: str):
+def asset(pid: str, name: str, v: str | None = None, version: str | None = None):
     row = project(pid)
     src_lang = row.get('source_language') or 'ko'
     allowed = ('source', 'dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'vi.srt', f'{src_lang}.srt', 'ko.srt', 'en.srt', 'ja.srt', 'zh.srt')
     if name not in allowed:
         raise HTTPException(404)
+
+    ver = v or version
+    ver_info = get_project_versions(pid, row)
+    cur_id = ver_info.get('current_version_id', 'v1.0')
+    if ver and ver != 'current' and ver != cur_id:
+        v_dir = folder(pid) / 'versions' / ver
+        if not v_dir.exists():
+            raise HTTPException(404, f'Phiên bản {ver} không tồn tại')
+        dl_name = get_download_filename(f"{row.get('name') or 'video'}_{ver}", name, src_lang)
+        if name.endswith('.srt'):
+            if (v_dir / name).exists():
+                return FileResponse(v_dir / name, media_type='application/x-subrip; charset=utf-8',
+                                    headers={'Content-Disposition': make_content_disposition(dl_name, 'attachment')})
+            segments = read_json(v_dir / 'segments.json', [])
+            if segments:
+                key = 'translation' if name == 'vi.srt' else 'source'
+                return Response(subtitles(segments, key),
+                                media_type='application/x-subrip; charset=utf-8',
+                                headers={'Content-Disposition': make_content_disposition(dl_name, 'attachment')})
+            raise HTTPException(404)
+        path = v_dir / name
+        if not path.exists():
+            raise HTTPException(404, f'Không tìm thấy file {name} cho phiên bản {ver}')
+        is_video = (name in ('source', 'dubbed_video.mp4'))
+        disposition = 'attachment' if name.endswith('.srt') else 'inline'
+        headers = None if name == 'source' else {'Content-Disposition': make_content_disposition(dl_name, disposition)}
+        return FileResponse(path, media_type='video/mp4' if is_video else None, headers=headers)
+
     path = folder(pid) / name
     dl_name = get_download_filename(row.get('name') or 'video', name, src_lang)
     if name.endswith('.srt'):
@@ -503,13 +560,21 @@ def asset(pid: str, name: str):
         key = 'translation' if name == 'vi.srt' else 'source'
         return Response(subtitles(segments, key),
                         media_type='application/x-subrip; charset=utf-8',
-                        headers={'Content-Disposition': make_content_disposition(dl_name)})
+                        headers={'Content-Disposition': make_content_disposition(dl_name, 'attachment')})
     if not path.exists():
         raise HTTPException(404)
     is_video = (name in ('source', 'dubbed_video.mp4'))
-    headers = None if name == 'source' else {'Content-Disposition': make_content_disposition(dl_name)}
+    disposition = 'attachment' if name.endswith('.srt') else 'inline'
+    headers = None if name == 'source' else {'Content-Disposition': make_content_disposition(dl_name, disposition)}
     return FileResponse(path, media_type='video/mp4' if is_video else None,
                         headers=headers)
+
+
+@app.post('/api/projects/{pid}/versions/{ver_id}/restore')
+def restore_project_ver(pid: str, ver_id: str):
+    row = project(pid)
+    data = restore_version(pid, ver_id, row)
+    return {'ok': True, 'versions': data.get('versions', []), 'current_version_id': data.get('current_version_id', 'v1.0')}
 
 
 @app.get('/api/projects/{pid}/mix/preview')
