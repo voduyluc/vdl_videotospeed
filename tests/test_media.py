@@ -40,14 +40,13 @@ class ExportTests(unittest.TestCase):
         self.assertGreater((p / 'narration.mp3').stat().st_size, 100)
         self.assertIn('Xin chào', (p / 'vi.srt').read_text('utf-8'))
 
-    def test_overflow_is_reported_without_publishing_drifting_audio(self):
+    def test_overflow_is_auto_trimmed_and_reported(self):
         pid, p = self.prepare(6)
         with core.db() as c:
             c.execute('UPDATE projects SET auto_fit=0 WHERE id=?', (pid,))
-        with self.assertRaisesRegex(RuntimeError, 'vượt thời lượng'):
-            export(pid)
-        self.assertFalse((p / 'narration.wav').exists())
-        self.assertFalse((p / 'narration.mp3').exists())
+        export(pid)
+        with wave.open(str(p / 'narration.wav'), 'rb') as audio:
+            self.assertAlmostEqual(audio.getnframes() / audio.getframerate(), 5, places=2)
         warnings = core.read_json(p / 'timing-warnings.json')
         self.assertEqual(warnings[0]['id'], 's1')
         self.assertGreater(warnings[0]['overflow_seconds'], 0)

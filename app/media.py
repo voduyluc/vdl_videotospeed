@@ -134,15 +134,12 @@ def export(pid):
                         'overflow_seconds': round(actual_dur - available, 3),
                         'audio_duration': round(m['duration'], 2),
                     })
-                    if auto_fit:
-                        raw_chunk = audio.readframes(max_frames)
-                        raw_chunk = apply_fade_out(raw_chunk)
-                        out.writeframesraw(raw_chunk)
-                        position += max_frames
-                    else:
-                        while chunk := audio.readframes(rate):
-                            out.writeframesraw(chunk)
-                        position += frames
+                    # Too long even after speed-up: cut at the boundary with a short fade-out
+                    # so later sentences never drift out of sync.
+                    raw_chunk = audio.readframes(max_frames)
+                    raw_chunk = apply_fade_out(raw_chunk)
+                    out.writeframesraw(raw_chunk)
+                    position += max_frames
                 else:
                     while chunk := audio.readframes(rate):
                         out.writeframesraw(chunk)
@@ -150,10 +147,8 @@ def export(pid):
             update(pid, progress=f'Ghép {i+1}/{len(segments)}')
         silence(max(0, round(total * rate) - position))
     write_json(p / 'timing-warnings.json', warnings)
-    if warnings and not auto_fit:
-        tmp.unlink(missing_ok=True)
-        # Never publish a film with accumulated drift or silently truncate speech.
-        raise RuntimeError(f'{len(warnings)} câu vượt thời lượng. Sửa/rút gọn câu được đánh dấu rồi tạo lại.')
+    if warnings:
+        update(pid, progress=f'Đã tự cắt {len(warnings)} câu quá dài')
     run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', tmp,
          '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', rate, '-c:a', 'pcm_s16le',
          p / 'normalized.wav'])
