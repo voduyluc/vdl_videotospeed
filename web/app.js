@@ -293,7 +293,14 @@ const I18N = {
     retryUpload: "Thử lại",
     cancelUpload: "Hủy tải lên",
     uploadQueueMultipleNotice: "Đang tải lên {0} video trong nền...",
-    btnAddMoreVideos: "➕ Thêm video khác"
+    btnAddMoreVideos: "➕ Thêm video khác",
+    uploadSubHeading: "📝 Tải lên phụ đề có sẵn (Tùy chọn)",
+    uploadSubHint: "Nếu đã có file phụ đề (.srt), hệ thống sẽ bỏ qua bước trích xuất stt chỉ trích xuất âm thanh để làm nền.",
+    uploadSubSrcLabel: "🌐 Phụ đề tiếng gốc (.srt)",
+    uploadSubSrcHint: "Bỏ qua STT, AI sẽ dịch sang tiếng Việt.",
+    uploadSubViLabel: "🇻🇳 Phụ đề tiếng Việt (.srt)",
+    uploadSubViHint: "Bỏ qua STT & Dịch, vào thẳng bước duyệt tạo Audio.",
+    clearSubBtnTitle: "Xóa file phụ đề đã chọn"
   },
   en: {
     addProjectBtn: "➕ Add New Video",
@@ -580,7 +587,14 @@ const I18N = {
     retryUpload: "Retry",
     cancelUpload: "Cancel upload",
     uploadQueueMultipleNotice: "Uploading {0} video(s) in background...",
-    btnAddMoreVideos: "➕ Add another video"
+    btnAddMoreVideos: "➕ Add another video",
+    uploadSubHeading: "📝 Upload Existing Subtitles (Optional)",
+    uploadSubHint: "If subtitle (.srt) file is provided, STT will be skipped and only background audio will be extracted.",
+    uploadSubSrcLabel: "🌐 Original Language Subtitle (.srt)",
+    uploadSubSrcHint: "Skips STT, AI will translate into Vietnamese.",
+    uploadSubViLabel: "🇻🇳 Vietnamese Subtitle (.srt)",
+    uploadSubViHint: "Skips STT & Translate, goes straight to review to generate Audio.",
+    clearSubBtnTitle: "Remove selected subtitle file"
   }
 };
 
@@ -2184,6 +2198,30 @@ function initProjectModal() {
     };
   }
 
+  const subSrcInput = $('#modalSubSrcInput');
+  const clearSubSrcBtn = $('#modalClearSubSrcBtn');
+  if (subSrcInput && clearSubSrcBtn) {
+    subSrcInput.onchange = () => {
+      clearSubSrcBtn.hidden = !subSrcInput.files.length;
+    };
+    clearSubSrcBtn.onclick = () => {
+      subSrcInput.value = '';
+      clearSubSrcBtn.hidden = true;
+    };
+  }
+
+  const subViInput = $('#modalSubViInput');
+  const clearSubViBtn = $('#modalClearSubViBtn');
+  if (subViInput && clearSubViBtn) {
+    subViInput.onchange = () => {
+      clearSubViBtn.hidden = !subViInput.files.length;
+    };
+    clearSubViBtn.onclick = () => {
+      subViInput.value = '';
+      clearSubViBtn.hidden = true;
+    };
+  }
+
   const hide = () => { modal.hidden = true; };
   if (closeBtn) closeBtn.onclick = hide;
   if (cancelBtn) cancelBtn.onclick = hide;
@@ -2212,6 +2250,11 @@ async function openProjectModal(mode, p = null) {
     $('#projectModalTitle').textContent = t('projectModalTitleAdd');
     $('#modalFileGroup').hidden = false;
     $('#modalFileInput').value = '';
+    if ($('#modalSubGroup')) $('#modalSubGroup').hidden = false;
+    if ($('#modalSubSrcInput')) $('#modalSubSrcInput').value = '';
+    if ($('#modalSubViInput')) $('#modalSubViInput').value = '';
+    if ($('#modalClearSubSrcBtn')) $('#modalClearSubSrcBtn').hidden = true;
+    if ($('#modalClearSubViBtn')) $('#modalClearSubViBtn').hidden = true;
     $('#modalSourceLang').value = prefs.sourceLang;
     $('#modalMultiSpeaker').checked = prefs.isMulti;
     updateVoiceOptionsVisibility(prefs.isMulti);
@@ -2247,6 +2290,7 @@ async function openProjectModal(mode, p = null) {
     // edit mode
     $('#projectModalTitle').textContent = t('projectModalTitleEdit');
     $('#modalFileGroup').hidden = true;
+    if ($('#modalSubGroup')) $('#modalSubGroup').hidden = true;
     $('#modalSourceLang').value = p.source_language || 'ko';
 
     const isStarted = !(p.step === 'extract' && (p.state === 'queued' || p.state === 'ready'));
@@ -2356,13 +2400,26 @@ async function handleModalSubmit() {
     form.append('mix_narration_gain', String(mixNarr));
     form.append('mix_ducking_attenuation', String(mixAtten));
 
+    const subSrcFile = $('#modalSubSrcInput') ? $('#modalSubSrcInput').files[0] : null;
+    if (subSrcFile) {
+      form.append('subtitle_src', subSrcFile);
+    }
+    const subViFile = $('#modalSubViInput') ? $('#modalSubViInput').files[0] : null;
+    if (subViFile) {
+      form.append('subtitle_vi', subViFile);
+    }
+
     submitBtn.disabled = true;
     const progContainer = $('#modalUploadProgressContainer');
     if (progContainer) progContainer.hidden = true;
 
-    // Close modal immediately and reset file input so user can add another video in parallel
+    // Close modal immediately and reset file inputs so user can add another video in parallel
     modal.hidden = true;
     $('#modalFileInput').value = '';
+    if ($('#modalSubSrcInput')) $('#modalSubSrcInput').value = '';
+    if ($('#modalSubViInput')) $('#modalSubViInput').value = '';
+    if ($('#modalClearSubSrcBtn')) $('#modalClearSubSrcBtn').hidden = true;
+    if ($('#modalClearSubViBtn')) $('#modalClearSubViBtn').hidden = true;
     submitBtn.disabled = false;
 
     toast(t('toastUploadQueued', file.name));

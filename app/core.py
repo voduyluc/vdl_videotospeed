@@ -278,3 +278,60 @@ def stamp(seconds):
 def subtitles(segments, language):
     return '\n\n'.join(f"{i}\n{stamp(s['start'])} --> {stamp(s['end'])}\n{s.get(language, '')}"
                        for i, s in enumerate(segments, 1)) + '\n'
+
+
+def parse_time(time_str: str) -> float:
+    time_str = time_str.strip().replace(',', '.')
+    parts = time_str.split(':')
+    if len(parts) == 3:
+        h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+        return h * 3600 + m * 60 + s
+    elif len(parts) == 2:
+        m, s = float(parts[0]), float(parts[1])
+        return m * 60 + s
+    return float(time_str)
+
+
+def parse_srt(content):
+    """Parse standard SRT (or WebVTT-like) subtitle text into list of segment dicts."""
+    if not content:
+        return []
+    if isinstance(content, bytes):
+        content = content.decode('utf-8', errors='replace')
+    content = content.lstrip('\ufeff').replace('\r\n', '\n').replace('\r', '\n')
+    blocks = re.split(r'\n\s*\n', content.strip())
+    segments = []
+    idx = 1
+    for block in blocks:
+        lines = [l.strip() for l in block.split('\n') if l.strip()]
+        if not lines:
+            continue
+        arrow_line_idx = -1
+        for i, line in enumerate(lines):
+            if '-->' in line:
+                arrow_line_idx = i
+                break
+        if arrow_line_idx == -1:
+            continue
+        parts = lines[arrow_line_idx].split('-->')
+        if len(parts) != 2:
+            continue
+        try:
+            start = parse_time(parts[0])
+            end = parse_time(parts[1].strip().split()[0])
+            if end <= start:
+                end = start + 1.0
+        except Exception:
+            continue
+        text_lines = lines[arrow_line_idx + 1:]
+        clean_text = re.sub(r'<[^>]+>', '', ' '.join(text_lines)).strip()
+        if not clean_text:
+            continue
+        segments.append({
+            'id': f's{idx}',
+            'start': round(max(0.0, start), 2),
+            'end': round(max(start + 0.1, end), 2),
+            'text': clean_text
+        })
+        idx += 1
+    return segments

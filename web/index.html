@@ -62,6 +62,36 @@
         </div>
       </div>
 
+      <!-- Subtitle optional uploads (only for Create mode) -->
+      <div class="modal-section-card" id="modalSubGroup" style="margin-top: 12px; margin-bottom: 12px;">
+        <label style="font-weight: 600; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 6px;">
+          <span data-i18n="uploadSubHeading">📝 Tải lên phụ đề có sẵn (Tùy chọn)</span>
+        </label>
+        <p class="hint-text" style="margin-top: 2px; margin-bottom: 10px;" data-i18n="uploadSubHint">Nếu đã có file phụ đề (.srt), hệ thống sẽ bỏ qua bước trích xuất stt chỉ trích xuất âm thanh để làm nền.</p>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <!-- Subtitle Tiếng Gốc -->
+          <div class="sub-upload-box" style="background: #141c24; border: 1px dashed #304050; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; font-weight: 600; color: #9bc0e2;" data-i18n="uploadSubSrcLabel">🌐 Phụ đề tiếng gốc (.srt)</span>
+              <button type="button" id="modalClearSubSrcBtn" style="background: none; border: none; color: #ff6b6b; font-size: 12px; cursor: pointer; padding: 0;" hidden data-i18n-title="clearSubBtnTitle" title="Xóa file">✕</button>
+            </div>
+            <p class="hint-text" style="font-size: 11px; margin: 0;" data-i18n="uploadSubSrcHint">Bỏ qua STT, AI sẽ dịch sang tiếng Việt.</p>
+            <input type="file" id="modalSubSrcInput" accept=".srt" style="font-size: 11px; padding: 4px;">
+          </div>
+
+          <!-- Subtitle Tiếng Việt -->
+          <div class="sub-upload-box" style="background: #141c24; border: 1px dashed #304050; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; font-weight: 600; color: #8de376;" data-i18n="uploadSubViLabel">🇻🇳 Phụ đề tiếng Việt (.srt)</span>
+              <button type="button" id="modalClearSubViBtn" style="background: none; border: none; color: #ff6b6b; font-size: 12px; cursor: pointer; padding: 0;" hidden data-i18n-title="clearSubBtnTitle" title="Xóa file">✕</button>
+            </div>
+            <p class="hint-text" style="font-size: 11px; margin: 0;" data-i18n="uploadSubViHint">Bỏ qua STT & Dịch, vào thẳng bước duyệt tạo Audio.</p>
+            <input type="file" id="modalSubViInput" accept=".srt" style="font-size: 11px; padding: 4px;">
+          </div>
+        </div>
+      </div>
+
       <!-- Locked settings hint in Edit mode -->
       <div id="modalLockedHint" class="modal-locked-hint" hidden>
         <span data-i18n="lockedSettingsHint">🔒 Ngôn ngữ nguồn và Chế độ nhiều người nói không thể đổi sau khi đã bắt đầu xử lý. Hãy dùng nút 'Chạy lại từ đầu' nếu muốn thay đổi.</span>

@@ -183,6 +183,23 @@ def main():
                     get_project_versions(pid, row)
                 except Exception:
                     pass
+            elif step == 'extract':
+                p = folder(pid)
+                segments = read_json(p / 'segments.json', [])
+                if segments:
+                    has_vi_trans = any(s.get('translation') for s in segments)
+                    if has_vi_trans:
+                        with db() as c:
+                            r = c.execute('SELECT pause_review FROM projects WHERE id=?', (pid,)).fetchone()
+                        pause = r['pause_review'] if r and 'pause_review' in r.keys() else 1
+                        if pause:
+                            update(pid, state='review', step='tts', progress='Chờ duyệt bản dịch')
+                        else:
+                            update(pid, state='queued', step='tts', progress='Tự động tiếp tục TTS')
+                    else:
+                        update(pid, state='queued', step='translate', progress='Chờ dịch')
+                else:
+                    update(pid, state='queued', step='stt')
             elif step in pipeline_steps and pipeline_steps.index(step) + 1 < len(pipeline_steps):
                 next_step = pipeline_steps[pipeline_steps.index(step) + 1]
                 update(pid, state='queued', step=next_step)

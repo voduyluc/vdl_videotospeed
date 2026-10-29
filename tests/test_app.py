@@ -732,6 +732,47 @@ class ApiTests(unittest.TestCase):
             rows = c.execute('SELECT * FROM project_versions WHERE project_id=?', (pid,)).fetchall()
             self.assertEqual(len(rows), 0)
 
+    def test_upload_with_vietnamese_subtitle(self):
+        srt_content = "1\n00:00:01,000 --> 00:00:04,500\nChào buổi sáng!\n\n2\n00:00:05,000 --> 00:00:08,000\nHôm nay là một ngày tuyệt vời.\n".encode('utf-8')
+        r = self.client.post('/api/projects', files={
+            'file': ('video_sub.mp4', b'fake_video_bytes', 'video/mp4'),
+            'subtitle_vi': ('sub_vi.srt', srt_content, 'text/plain')
+        })
+        self.assertEqual(r.status_code, 200)
+        pid = r.json()['id']
+        p_dir = core.folder(pid)
+        segs = core.read_json(p_dir / 'segments.json')
+        self.assertEqual(len(segs), 2)
+        # Check that left column (source) is empty and translation has the text
+        self.assertEqual(segs[0]['source'], '')
+        self.assertIn('Chào buổi sáng', segs[0]['translation'])
+        self.assertEqual(segs[0]['start'], 1.0)
+        self.assertEqual(segs[0]['end'], 4.5)
+        self.assertTrue((p_dir / 'vi.srt').exists())
+
+        # Test clicking Save & Generate Audio (POST /api/projects/{pid}/generate)
+        core.update(pid, state='review', step='tts')
+        r_gen = self.client.post(f'/api/projects/{pid}/generate')
+        self.assertEqual(r_gen.status_code, 200)
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['step'], 'tts')
+        self.assertEqual(proj['state'], 'queued')
+
+    def test_upload_with_source_subtitle(self):
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nHello world\n"
+        r = self.client.post('/api/projects', files={
+            'file': ('english.mp4', b'fake_video_bytes', 'video/mp4'),
+            'subtitle_src': ('sub_en.srt', srt_content, 'text/plain')
+        }, data={'source_language': 'en'})
+        self.assertEqual(r.status_code, 200)
+        pid = r.json()['id']
+        p_dir = core.folder(pid)
+        segs = core.read_json(p_dir / 'segments.json')
+        self.assertEqual(len(segs), 1)
+        self.assertEqual(segs[0]['source'], 'Hello world')
+        self.assertEqual(segs[0]['translation'], '')
+        self.assertTrue((p_dir / 'en.srt').exists())
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

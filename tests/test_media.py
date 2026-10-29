@@ -131,3 +131,24 @@ class DurationTests(unittest.TestCase):
             with core.db() as c:
                 row = c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
             self.assertAlmostEqual(row['duration'], 3.0, places=1)
+
+    def test_parse_srt_various_formats(self):
+        from app.core import parse_srt
+        raw = """1
+00:00:01,200 --> 00:00:03,500
+Line 1
+<i>Line 1 subtitle</i>
+
+2
+00:01:05.000 --> 00:01:08.000 position:50%
+Line 2 with tags <b>bold</b>
+"""
+        segs = parse_srt(raw)
+        self.assertEqual(len(segs), 2)
+        self.assertEqual(segs[0]['id'], 's1')
+        self.assertEqual(segs[0]['start'], 1.2)
+        self.assertEqual(segs[0]['end'], 3.5)
+        self.assertEqual(segs[0]['text'], 'Line 1 Line 1 subtitle')
+        self.assertEqual(segs[1]['start'], 65.0)
+        self.assertEqual(segs[1]['end'], 68.0)
+        self.assertEqual(segs[1]['text'], 'Line 2 with tags bold')

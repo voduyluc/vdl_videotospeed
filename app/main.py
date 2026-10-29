@@ -9,13 +9,13 @@ import unicodedata
 import urllib.parse
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.core import DATA, ROOT, db, duration, folder, init_db, read_json, run, subtitles, tts_key, update, wav_duration, write_json
+from app.core import DATA, ROOT, db, duration, folder, init_db, parse_srt, read_json, run, subtitles, tts_key, update, wav_duration, write_json
 from app.versions import get_project_versions, archive_and_create_new_version, restore_version
 
 init_db()
@@ -157,7 +157,8 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
            mix_background_gain: float = Form(0.25), mix_narration_gain: float = Form(1.0),
            mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0),
            mux_video: int = Form(1), pause_before_mux: int = Form(1),
-           auto_trim_overflow: int = Form(0), trim_threshold_pct: int = Form(120)):
+           auto_trim_overflow: int = Form(0), trim_threshold_pct: int = Form(120),
+           subtitle_src: UploadFile = File(None), subtitle_vi: UploadFile = File(None)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
@@ -189,6 +190,63 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
                 out.write(chunk)
         if not size:
             raise HTTPException(400, 'Empty file')
+
+        # Process optional subtitle uploads
+        raw_vi = None
+        if subtitle_vi and getattr(subtitle_vi, 'filename', None):
+            try:
+                raw_vi = subtitle_vi.file.read()
+            except Exception:
+                raw_vi = None
+            finally:
+                subtitle_vi.file.close()
+
+        raw_src = None
+        if subtitle_src and getattr(subtitle_src, 'filename', None):
+            try:
+                raw_src = subtitle_src.file.read()
+            except Exception:
+                raw_src = None
+            finally:
+                subtitle_src.file.close()
+
+        parsed_vi = parse_srt(raw_vi) if raw_vi else []
+        parsed_src = parse_srt(raw_src) if raw_src else []
+
+        uploaded_segments = []
+        if parsed_vi:
+            for i, item in enumerate(parsed_vi):
+                src_txt = parsed_src[i]['text'] if (parsed_src and i < len(parsed_src)) else ''
+                uploaded_segments.append({
+                    'id': item['id'],
+                    'start': item['start'],
+                    'end': item['end'],
+                    'source': src_txt,
+                    'translation': item['text'],
+                    'speaker': 'Nam' if multi_flag else None,
+                    'gender': 'male' if multi_flag else None,
+                    'voice': v_male if multi_flag else selected_voice
+                })
+        elif parsed_src:
+            for item in parsed_src:
+                uploaded_segments.append({
+                    'id': item['id'],
+                    'start': item['start'],
+                    'end': item['end'],
+                    'source': item['text'],
+                    'translation': '',
+                    'speaker': 'Nam' if multi_flag else None,
+                    'gender': 'male' if multi_flag else None,
+                    'voice': v_male if multi_flag else selected_voice
+                })
+
+        if uploaded_segments:
+            write_json(p / 'segments.json', uploaded_segments)
+            if parsed_vi:
+                (p / 'vi.srt').write_text(subtitles(uploaded_segments, 'translation'), encoding='utf-8')
+            if parsed_src or (parsed_vi and any(s.get('source') for s in uploaded_segments)):
+                (p / f'{src_lang}.srt').write_text(subtitles(uploaded_segments, 'source'), encoding='utf-8')
+
         with db() as c:
             now_ts = time.time()
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
