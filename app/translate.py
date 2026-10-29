@@ -155,6 +155,7 @@ def translate(pid, shared_client=None):
             batch = segments[start:start + 8]
             untranslated = [s for s in batch if not s.get('translation')]
             if not untranslated:
+                update(pid, progress=f'Dịch {min(start+8, len(segments))}/{len(segments)}')
                 continue
 
             def call_translate(sub_batch, temp=0.2):
@@ -175,13 +176,14 @@ def translate(pid, shared_client=None):
                                      'segments': payload}, ensure_ascii=False)}],
                     'temperature': temp, 'max_tokens': 1800,
                     'chat_template_kwargs': {'enable_thinking': False},
-                    'response_format': {'type': 'json_object'}})
+                    'response_format': {'type': 'json_object'}},
+                    timeout=45)
                 response.raise_for_status()
                 content = response.json()['choices'][0]['message']['content']
                 return parse_translation(content)
 
-            # Try translating the batch with flexible matching
-            for attempt in range(3):
+            # Try translating the batch with flexible matching (2 attempts)
+            for attempt in range(2):
                 try:
                     rows = call_translate(untranslated, temp=0.2 if attempt == 0 else 0.4)
                     matched = match_translations(untranslated, rows, allow_positional=(attempt > 0 and len(untranslated) > 1))
@@ -196,7 +198,8 @@ def translate(pid, shared_client=None):
 
             # Fallback to 1-by-1 translation for any remaining segments in the batch
             if untranslated:
-                for s in untranslated:
+                for idx_sub, s in enumerate(untranslated):
+                    update(pid, progress=f'Dịch {min(start + idx_sub + 1, len(segments))}/{len(segments)}')
                     try:
                         rows = call_translate([s], temp=0.3)
                         matched = match_translations([s], rows, allow_positional=True)

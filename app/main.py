@@ -6,7 +6,7 @@ import shutil
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +25,17 @@ def auth(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 app = FastAPI(title='Viet Voice Studio', dependencies=[Depends(auth)])
+
+
+@app.middleware("http")
+async def add_no_cache_for_api(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/api/'):
+        if 'cache-control' not in response.headers:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+    return response
 
 
 def project(pid):

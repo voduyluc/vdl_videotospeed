@@ -253,6 +253,7 @@ class ApiTests(unittest.TestCase):
     def test_usage_stats_endpoint(self):
         r = self.client.get('/api/usage')
         self.assertEqual(r.status_code, 200)
+        self.assertIn('no-cache', r.headers.get('cache-control', ''))
         data = r.json()
         self.assertIn('cpu', data)
         self.assertIn('ram', data)

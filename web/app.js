@@ -705,7 +705,29 @@ function buildVoiceSelect(currentVoice){
 
 function el(tag, text, cls) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(cls)e.className=cls; return e; }
 function toast(message) { $('#toast').textContent=message; $('#toast').style.display='block'; setTimeout(()=>$('#toast').style.display='none',6000); }
-async function api(path,options={}) { const r=await fetch('/api'+path,options); if(!r.ok){let b=await r.json().catch(()=>({detail:r.statusText}));throw Error(typeof b.detail==='string'?b.detail:JSON.stringify(b.detail));} return r.json(); }
+async function api(path, options={}) {
+  const url = '/api' + path + (path.includes('?') ? '&' : '?') + '_=' + Date.now();
+  const controller = new AbortController();
+  const timeoutMs = options.timeout || 15000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const opts = { ...options, signal: controller.signal };
+    delete opts.timeout;
+    const r = await fetch(url, opts);
+    if (!r.ok) {
+      let b = await r.json().catch(() => ({detail: r.statusText}));
+      throw Error(typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail));
+    }
+    return r.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw Error('Yêu cầu máy chủ hết thời gian chờ (Server request timeout)');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 async function act(action) { try {if(action==='generate'){await save();} await api(`/projects/${selected}/${action}`,{method:'POST'}); dirty=false; await refresh(true);}catch(e){toast(e.message);} }
 
 async function save(){
@@ -1139,11 +1161,17 @@ function render(){
   heading.append(hActions);
   w.append(heading);
 
-  w.append(renderPipeline(p));
+  const pipelineBox = el('div', undefined, 'pipeline-wrapper');
+  pipelineBox.id = 'pipelineBox';
+  pipelineBox.append(renderPipeline(p));
+  w.append(pipelineBox);
+
   const dlSec = renderDownloadSection(p);
   if(dlSec) w.append(dlSec);
 
-  w.append(el('p',t('segmentsCountMeta', p.progress||getStatusLabel(p.state), p.segments.length, time(p.duration))));
+  const metaP = el('p', t('segmentsCountMeta', p.progress||getStatusLabel(p.state), p.segments.length, time(p.duration)));
+  metaP.id = 'segmentsMeta';
+  w.append(metaP);
   const video=el('video');video.controls=true;video.preload='metadata';video.src=`/api/projects/${p.id}/files/source`;w.append(video);
   if(p.error)w.append(el('pre',p.error,'error'));
 
@@ -1271,33 +1299,64 @@ function render(){
   }
 }
 
+let busySince = 0;
+
 async function refresh(force=false){
-  if(busy)return;busy=true;
+  const now = Date.now();
+  if(busy){
+    if(now - busySince > 15000){
+      busy = false;
+    } else {
+      return;
+    }
+  }
+  busy = true;
+  busySince = now;
   try{
-    const all=await api('/projects');$('#projects').replaceChildren();
+    const all = await api('/projects');
+    $('#projects').replaceChildren();
     for(const p of all){
-      const row=el('div',undefined,'project-row'+(p.id===selected?' active':''));
-      const b=el('button',p.name,'project-select-btn');
-      b.append(el('small',`${getStatusLabel(p.state)||p.state} · ${p.progress||p.step}`));
-      b.onclick=async()=>{
-        if(dirty&&!confirm(t('confirmDiscardChanges')))return;
-        selected=p.id;page=0;dirty=false;drafts.clear();filterWarnings=false;await refresh(true);
+      const row = el('div', undefined, 'project-row' + (p.id === selected ? ' active' : ''));
+      const b = el('button', p.name, 'project-select-btn');
+      b.append(el('small', `${getStatusLabel(p.state) || p.state} · ${p.progress || p.step}`));
+      b.onclick = async () => {
+        if(dirty && !confirm(t('confirmDiscardChanges'))) return;
+        selected = p.id;
+        page = 0;
+        dirty = false;
+        drafts.clear();
+        filterWarnings = false;
+        await refresh(true);
       };
-      const delBtn=el('button','🗑️','project-del-btn');
-      delBtn.title=t('deleteProjectTitle');
-      delBtn.onclick=(e)=>{e.stopPropagation();deleteProject(p);};
-      row.append(b,delBtn);
+      const delBtn = el('button', '🗑️', 'project-del-btn');
+      delBtn.title = t('deleteProjectTitle');
+      delBtn.onclick = (e) => { e.stopPropagation(); deleteProject(p); };
+      row.append(b, delBtn);
       $('#projects').append(row);
     }
     if(!all.length){
-      selected=null;current=null;
-      $('#workspace').innerHTML=`<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
-    }else{
-      if(!selected||!all.some(x=>x.id===selected))selected=all[0].id;
-      if(selected&&!dirty&&!previewAudio){
-        const p=await api(`/projects/${selected}`);
-        const changed=force||!current||p.id!==current.id||p.state!==current.state||p.progress!==current.progress;
-        if(changed){current=p;render();}
+      selected = null;
+      current = null;
+      $('#workspace').innerHTML = `<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
+    } else {
+      if(!selected || !all.some(x => x.id === selected)) selected = all[0].id;
+      if(selected){
+        const isRunning = current && current.state === 'running';
+        if(!dirty || isRunning){
+          const p = await api(`/projects/${selected}`);
+          const stateChanged = force || !current || p.id !== current.id || p.state !== current.state;
+          const progressChanged = current && (p.progress !== current.progress);
+          if(stateChanged){
+            current = p;
+            render();
+          } else if(progressChanged){
+            current = p;
+            const pb = $('#pipelineBox');
+            if(pb) pb.replaceChildren(renderPipeline(p));
+            const sm = $('#segmentsMeta');
+            if(sm) sm.textContent = t('segmentsCountMeta', p.progress || getStatusLabel(p.state), p.segments.length, time(p.duration));
+          }
+        }
       }
     }
   }catch(e){toast(e.message);}finally{busy=false;}
@@ -1906,4 +1965,9 @@ initLanguageSwitch();
 initProjectModal();
 initUsageModal();
 initVoiceModal();
-refresh();setInterval(()=>refresh(),3000);
+refresh();
+setInterval(() => refresh(), 3000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refresh(true);
+});
+window.addEventListener('focus', () => refresh(true));
