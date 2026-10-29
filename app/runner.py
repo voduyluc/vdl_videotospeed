@@ -113,7 +113,8 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     init_db()
-    steps = ['extract', 'stt', 'translate', 'tts', 'export', 'mix']
+    pipeline_steps = ['extract', 'stt', 'translate', 'tts', 'export', 'mix']
+    step_order = {'extract': 0, 'stt': 1, 'translate': 2, 'condense': 3, 'tts': 4, 'export': 5, 'mix': 6}
     while not stopping:
         with db() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM projects WHERE state='queued' ORDER BY created")]
@@ -126,7 +127,7 @@ def main():
             time.sleep(1)
             continue
         if os.getenv('QUEUE_MODE', 'file') == 'stage':
-            rows.sort(key=lambda r: (steps.index(r['step']), r['created']))
+            rows.sort(key=lambda r: (step_order.get(r['step'], 99), r['created']))
         row = rows[0]
         pid, step = row['id'], row['step']
         if os.getenv('QUEUE_MODE', 'file') == 'stage' and step in ('stt', 'translate', 'tts'):
@@ -143,6 +144,8 @@ def main():
                     update(pid, state='review', step='tts', progress='Chờ duyệt bản dịch')
                 else:
                     update(pid, state='queued', step='tts', progress='Tự động tiếp tục TTS')
+            elif step == 'condense':
+                update(pid, state='review', step='tts', progress='Đã dùng AI thu gọn câu xong')
             elif step == 'tts' and row.get('name', '').startswith('Voice Preview:'):
                 manifest = read_json(folder(pid) / 'tts-manifest.json', [])
                 if manifest:

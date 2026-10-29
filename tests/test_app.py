@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 import wave
@@ -297,6 +298,62 @@ class ApiTests(unittest.TestCase):
         r_remix_ok = self.client.post(f'/api/projects/{pid}/remix')
         self.assertEqual(r_remix_ok.status_code, 200)
         self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['step'], 'mix')
+
+    def test_fit_duration_and_ai_condense(self):
+        # 1. Test fit_duration upload default and custom
+        r1 = self.client.post('/api/projects', files={'file': ('fit1.mp4', b'video', 'video/mp4')})
+        self.assertEqual(r1.status_code, 200)
+        pid1 = r1.json()['id']
+        det1 = self.client.get(f'/api/projects/{pid1}').json()
+        self.assertEqual(det1.get('fit_duration'), 1)
+
+        r2 = self.client.post('/api/projects', files={'file': ('fit2.mp4', b'video', 'video/mp4')},
+                              data={'fit_duration': '0'})
+        self.assertEqual(r2.status_code, 200)
+        pid2 = r2.json()['id']
+        det2 = self.client.get(f'/api/projects/{pid2}').json()
+        self.assertEqual(det2.get('fit_duration'), 0)
+
+        # Update settings
+        self.client.patch(f'/api/projects/{pid2}/settings', json={'fit_duration': True})
+        self.assertEqual(self.client.get(f'/api/projects/{pid2}').json().get('fit_duration'), 1)
+
+        # 2. Test condense endpoint queuing
+        self.review(pid1)
+        r_cond = self.client.post(f'/api/projects/{pid1}/condense', json={'segment_ids': ['s1']})
+        self.assertEqual(r_cond.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/projects/{pid1}').json()['step'], 'condense')
+        self.assertEqual(self.client.get(f'/api/projects/{pid1}').json()['state'], 'queued')
+
+        # 3. Test condense() logic with mock client
+        from app.translate import condense
+        from unittest.mock import MagicMock
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            'choices': [{
+                'message': {
+                    'content': '{"translations":[{"id":"s1","text":"Chào"}]}'
+                }
+            }]
+        }
+        mock_client.post.return_value = mock_response
+
+        # Call condense directly with mock_client
+        condense(pid1, shared_client=mock_client)
+        updated_segs = core.read_json(core.folder(pid1) / 'segments.json')
+        self.assertEqual(updated_segs[0]['translation'], 'Chào')
+
+        # 4. Test translate() sends max_words when fit_duration is 1
+        from app.translate import translate
+        mock_client.reset_mock()
+        core.write_json(core.folder(pid1) / 'segments.json', [
+            {'id': 's1', 'start': 0, 'end': 2, 'source': 'Hello', 'translation': ''}
+        ])
+        translate(pid1, shared_client=mock_client)
+        call_kwargs = mock_client.post.call_args[1]
+        sent_body = json.loads(call_kwargs['json']['messages'][1]['content'])
+        self.assertIn('max_words', sent_body['segments'][0])
 
 
 class PipelineTests(unittest.TestCase):

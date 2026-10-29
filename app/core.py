@@ -40,12 +40,15 @@ def init_db():
             mix_background_gain REAL DEFAULT 0.25,
             mix_narration_gain REAL DEFAULT 1.0,
             mix_ducking INTEGER DEFAULT 1,
-            mix_ducking_attenuation REAL DEFAULT 16.0)''')
+            mix_ducking_attenuation REAL DEFAULT 16.0,
+            fit_duration INTEGER DEFAULT 1)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
         if 'auto_fit' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN auto_fit INTEGER DEFAULT 1')
+        if 'fit_duration' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN fit_duration INTEGER DEFAULT 1')
         if 'source_language' not in cols:
             c.execute("ALTER TABLE projects ADD COLUMN source_language TEXT DEFAULT 'ko'")
         if 'mix_background_gain' not in cols:

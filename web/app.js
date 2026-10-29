@@ -27,6 +27,12 @@ const I18N = {
     pauseReviewTitle: "Dừng lại sau khi dịch để kiểm tra và chỉnh sửa trước khi tổng hợp giọng",
     pauseReviewLabel: "Dừng để duyệt bản dịch",
     pauseReviewHint: "Bỏ chọn nếu muốn chạy tự động từ đầu đến cuối.",
+    fitDurationTitle: "Ép độ dài bản dịch không vượt quá thời lượng nói của từng câu",
+    fitDurationLabel: "Ép thời lượng khi dịch (AI dịch cô đọng)",
+    fitDurationHint: "Giới hạn số từ của bản dịch vừa khít thời lượng nói của từng câu.",
+    fitDurationShort: "Ép thời lượng khi dịch",
+    toastFitDurationOn: "Đã bật: AI sẽ ép thời lượng dịch cô đọng cho từng câu",
+    toastFitDurationOff: "Đã tắt: Chế độ dịch tự nhiên không ép thời lượng",
     autoFitTitle: "Tự động nén tốc độ âm thanh và cắt nhẹ đuôi để vừa khít thời lượng",
     autoFitLabel: "Tự nén âm thanh vừa thời gian",
     autoFitHint: "Tự nén tốc độ để vừa khung thời gian, tránh lỗi.",
@@ -95,6 +101,13 @@ const I18N = {
     segmentHint: "Nhấn mốc thời gian để nghe lời gốc. Bấm \"Nghe thử\" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.",
     tabAll: "Tất cả ({0})",
     tabWarning: "⚠️ Câu vượt thời lượng ({0})",
+    tabAiCondense: "🤖 AI thu gọn câu dài ({0} câu)",
+    tabAiCondenseTitle: "Dùng LLM thông minh viết lại các câu bị dài, giữ nguyên ý chính và không vượt quá số từ an toàn",
+    aiCondensing: "Đang gửi yêu cầu AI...",
+    toastAiCondenseQueued: "Đã đưa yêu cầu AI thu gọn câu vào hàng đợi GPU.",
+    btnAiCondenseSeg: "🤖 AI thu gọn",
+    btnAiCondenseSegTitle: "Dùng AI viết lại câu này cho vừa khít thời lượng",
+    toastAiCondenseSegQueued: "Đã gửi yêu cầu AI thu gọn cho câu {0}.",
     tabAutoTrim: "✂️ Tự cắt từ cho đủ ({0} câu)",
     tabAutoTrimTitle: "Tự động cắt ngắn số từ của các câu bị dài về giới hạn an toàn",
     pageCounter: "Trang {0}/{1} ({2} câu)",
@@ -207,6 +220,12 @@ const I18N = {
     pauseReviewTitle: "Pause after translation to review and edit before voice synthesis",
     pauseReviewLabel: "Pause to review translation",
     pauseReviewHint: "Uncheck to run automatically from start to finish.",
+    fitDurationTitle: "Limit translation length to fit spoken duration of each segment",
+    fitDurationLabel: "Fit duration during translation (AI concise translation)",
+    fitDurationHint: "Restricts word count to fit duration of each sentence.",
+    fitDurationShort: "Fit duration in translation",
+    toastFitDurationOn: "Enabled: AI will restrict translation word count to fit duration",
+    toastFitDurationOff: "Disabled: Standard translation without duration limits",
     autoFitTitle: "Automatically compress audio speed to fit segment duration",
     autoFitLabel: "Auto-fit audio duration",
     autoFitHint: "Compresses speech speed to fit time frame and prevent errors.",
@@ -275,6 +294,13 @@ const I18N = {
     segmentHint: "Click timestamps to play original audio. Click \"Play\" to preview Vietnamese audio. Orange border: exceeds duration.",
     tabAll: "All ({0})",
     tabWarning: "⚠️ Over duration ({0})",
+    tabAiCondense: "🤖 AI Condense Long Sentences ({0})",
+    tabAiCondenseTitle: "Use LLM to rewrite long sentences concisely, preserving key meaning within safe word limits",
+    aiCondensing: "Sending AI request...",
+    toastAiCondenseQueued: "AI sentence condensation task queued to GPU.",
+    btnAiCondenseSeg: "🤖 AI Condense",
+    btnAiCondenseSegTitle: "Use AI to rewrite this sentence to fit duration",
+    toastAiCondenseSegQueued: "Queued AI condensation request for sentence {0}.",
     tabAutoTrim: "✂️ Auto-trim words ({0} segments)",
     tabAutoTrimTitle: "Automatically trims word count of long sentences to safe limits",
     pageCounter: "Page {0}/{1} ({2} segments)",
@@ -609,6 +635,30 @@ function renderSegments(container, editable, warningsMap, list){
       const actSec = w.actual_seconds ? w.actual_seconds : (segDuration + w.overflow_seconds).toFixed(1);
       timingBox.innerHTML = t('timingInfo', actSec, maxSec);
       actions.append(timingBox);
+
+      if (editable) {
+        const condenseBtn = el('button', t('btnAiCondenseSeg'), 'btn-condense-seg secondary');
+        condenseBtn.title = t('btnAiCondenseSegTitle');
+        condenseBtn.onclick = async () => {
+          condenseBtn.disabled = true;
+          condenseBtn.textContent = '...';
+          try {
+            await save();
+            await api(`/projects/${selected}/condense`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({segment_ids: [s.id]})
+            });
+            toast(t('toastAiCondenseSegQueued', s.id));
+            await refresh(true);
+          } catch(err) {
+            toast(err.message);
+            condenseBtn.disabled = false;
+            condenseBtn.textContent = t('btnAiCondenseSeg');
+          }
+        };
+        actions.append(condenseBtn);
+      }
     } else {
       actions.append(el('div', t('timingSafe', segDuration.toFixed(1)), 'timing-info'));
     }
@@ -1075,6 +1125,19 @@ function render(){
   autoFitLabel.append(autoFitCb,el('span',t('autoFitShort')));
   tools.append(autoFitLabel);
 
+  const fitDurLabel=el('label',undefined,'checkbox-label');
+  const fitDurCb=el('input');fitDurCb.type='checkbox';
+  fitDurCb.checked=(p.fit_duration!==0);
+  fitDurCb.onchange=async()=>{
+    try{
+      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fit_duration:fitDurCb.checked})});
+      p.fit_duration=fitDurCb.checked?1:0;
+      toast(fitDurCb.checked?t('toastFitDurationOn'):t('toastFitDurationOff'));
+    }catch(e){toast(e.message);fitDurCb.checked=!fitDurCb.checked;}
+  };
+  fitDurLabel.append(fitDurCb,el('span',t('fitDurationShort')));
+  tools.append(fitDurLabel);
+
   const editable=['review','failed','completed'].includes(p.state);
   if(editable&&p.segments.length){
     const saveButton=el('button',t('saveTranslationBtn'),'secondary');saveButton.onclick=async()=>{try{await save();toast(t('toastSaved'));await refresh(true);}catch(e){toast(e.message);}};tools.append(saveButton);
@@ -1099,6 +1162,25 @@ function render(){
     filterTabs.append(warnTab);
 
     if(warnCount > 0 && editable){
+      const aiCondenseBtn = el('button', t('tabAiCondense', warnCount), 'tab-btn ai-condense-btn');
+      aiCondenseBtn.title = t('tabAiCondenseTitle');
+      aiCondenseBtn.onclick = async () => {
+        aiCondenseBtn.disabled = true;
+        aiCondenseBtn.textContent = t('aiCondensing');
+        try {
+          await save();
+          await api(`/projects/${p.id}/condense`, {method: 'POST'});
+          toast(t('toastAiCondenseQueued'));
+          await refresh(true);
+        } catch(err) {
+          toast(err.message);
+        } finally {
+          aiCondenseBtn.disabled = false;
+          aiCondenseBtn.textContent = t('tabAiCondense', warnCount);
+        }
+      };
+      filterTabs.append(aiCondenseBtn);
+
       const trimBtn = el('button', t('tabAutoTrim', warnCount), 'tab-btn auto-trim-btn');
       trimBtn.title = t('tabAutoTrimTitle');
       trimBtn.onclick = () => {
@@ -1208,6 +1290,8 @@ $('#upload').onclick=()=>{
   form.append('pause_review',pauseEl&&pauseEl.checked?'1':'0');
   const autoFitEl=$('#uploadAutoFit');
   form.append('auto_fit',autoFitEl&&autoFitEl.checked?'1':'0');
+  const fitDurEl=$('#uploadFitDuration');
+  form.append('fit_duration',fitDurEl&&fitDurEl.checked?'1':'0');
   const langEl=$('#uploadSourceLang');
   if(langEl&&langEl.value)form.append('source_language',langEl.value);
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');

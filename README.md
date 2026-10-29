@@ -8,6 +8,9 @@ Pipeline: FFmpeg (tách STT & background stereo) → faster-whisper large-v3 INT
 - 🌐 **Hỗ trợ đa ngôn ngữ video nguồn**: Hàn (`ko` - mặc định), Anh (`en`), Nhật (`ja`). Đầu ra luôn là thuyết minh tiếng Việt chuẩn xác theo ngữ cảnh.
 - 🎙️ **Thư viện Voice Cloning cá nhân**: Tải lên mẫu giọng ngắn (khuyến nghị 3–8 giây sạch, 1 người nói), tạo câu nghe thử và chọn giọng clone đọc thuyết minh cho toàn bộ video. Tích hợp trực tiếp qua VieNeu-TTS local.
 - 🎚️ **Giữ âm thanh gốc làm nền & Sidechain Ducking**: Giữ toàn bộ âm thanh nền gốc stereo (nhạc, hiệu ứng, môi trường), tự động hạ âm lượng nền mượt mà khi giọng thuyết minh phát lên và nâng nền khi thuyết minh ngừng. Cho phép tùy chỉnh âm lượng nền/thuyết minh, độ nén ducking, nghe thử 15s và phối âm lại (Remix) tức thì không cần chạy lại STT/Dịch/TTS.
+- ⚡ **Ép thời lượng khi dịch & Thu gọn câu bằng LLM (AI Condensation)**:
+  - *Cách 1 (Ép thời lượng khi dịch)*: Tự động tính toán số từ tối đa (`max_words`) cho từng câu theo số giây nói và yêu cầu LLM dịch cô đọng ngay từ đầu (mặc định bật).
+  - *Cách 2 (AI thu gọn câu dài)*: Nút **🤖 AI thu gọn câu dài** tại màn hình duyệt cho phép dùng LLM viết lại các câu vượt thời lượng thật súc tích, giữ trọn ý chính và danh từ/hành động quan trọng, hoặc thu gọn từng câu đơn lẻ.
 - 🌐 **Ngôn ngữ hiển thị giao diện (UI)**: Chuyển đổi linh hoạt giữa Tiếng Việt và Tiếng Anh ngay góc trên thanh điều hướng, tự động lưu lựa chọn vào `localStorage`.
 
 ## Cài đặt trên server
