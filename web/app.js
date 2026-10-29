@@ -1306,6 +1306,39 @@ async function refresh(force=false){
 let projectModalMode = 'create';
 let editingProjectId = null;
 
+function updateVoiceOptionsVisibility(isMulti) {
+  const multiGroup = $('#modalMultiVoiceGroup');
+  const singleGroup = $('#modalSingleVoiceGroup');
+  if (multiGroup) {
+    multiGroup.hidden = !isMulti;
+    multiGroup.style.display = isMulti ? 'grid' : 'none';
+  }
+  if (singleGroup) {
+    singleGroup.hidden = isMulti;
+    singleGroup.style.display = isMulti ? 'none' : 'block';
+  }
+}
+
+function saveVoicePreferences(isMulti, voiceMale, voiceFemale, singleVoice, sourceLang) {
+  try {
+    localStorage.setItem('vietvoice_pref_multi_speaker', isMulti ? '1' : '0');
+    if (voiceMale) localStorage.setItem('vietvoice_pref_voice_male', voiceMale);
+    if (voiceFemale) localStorage.setItem('vietvoice_pref_voice_female', voiceFemale);
+    if (singleVoice) localStorage.setItem('vietvoice_pref_voice', singleVoice);
+    if (sourceLang) localStorage.setItem('vietvoice_pref_source_lang', sourceLang);
+  } catch(e) {}
+}
+
+function loadVoicePreferences() {
+  return {
+    isMulti: localStorage.getItem('vietvoice_pref_multi_speaker') === '1',
+    voiceMale: localStorage.getItem('vietvoice_pref_voice_male') || 'Hải Đăng',
+    voiceFemale: localStorage.getItem('vietvoice_pref_voice_female') || 'Mai Anh',
+    singleVoice: localStorage.getItem('vietvoice_pref_voice') || 'Hải Đăng',
+    sourceLang: localStorage.getItem('vietvoice_pref_source_lang') || 'ko'
+  };
+}
+
 function initProjectModal() {
   const modal = $('#projectModal');
   const addBtn = $('#addProjectBtn');
@@ -1324,8 +1357,44 @@ function initProjectModal() {
   if (multiCb) {
     multiCb.onchange = () => {
       const isMulti = multiCb.checked;
-      $('#modalMultiVoiceGroup').hidden = !isMulti;
-      $('#modalSingleVoiceGroup').hidden = isMulti;
+      updateVoiceOptionsVisibility(isMulti);
+      try { localStorage.setItem('vietvoice_pref_multi_speaker', isMulti ? '1' : '0'); } catch(e) {}
+    };
+  }
+
+  const voiceSingleEl = $('#modalSingleVoice');
+  if (voiceSingleEl) {
+    voiceSingleEl.onchange = () => {
+      if (voiceSingleEl.value) {
+        try { localStorage.setItem('vietvoice_pref_voice', voiceSingleEl.value); } catch(e) {}
+      }
+    };
+  }
+
+  const voiceMaleEl = $('#modalVoiceMale');
+  if (voiceMaleEl) {
+    voiceMaleEl.onchange = () => {
+      if (voiceMaleEl.value) {
+        try { localStorage.setItem('vietvoice_pref_voice_male', voiceMaleEl.value); } catch(e) {}
+      }
+    };
+  }
+
+  const voiceFemaleEl = $('#modalVoiceFemale');
+  if (voiceFemaleEl) {
+    voiceFemaleEl.onchange = () => {
+      if (voiceFemaleEl.value) {
+        try { localStorage.setItem('vietvoice_pref_voice_female', voiceFemaleEl.value); } catch(e) {}
+      }
+    };
+  }
+
+  const langEl = $('#modalSourceLang');
+  if (langEl) {
+    langEl.onchange = () => {
+      if (langEl.value) {
+        try { localStorage.setItem('vietvoice_pref_source_lang', langEl.value); } catch(e) {}
+      }
     };
   }
 
@@ -1350,21 +1419,21 @@ async function openProjectModal(mode, p = null) {
   await fetchVoicesAll();
 
   if (mode === 'create') {
+    const prefs = loadVoicePreferences();
     $('#projectModalTitle').textContent = t('projectModalTitleAdd');
     $('#modalFileGroup').hidden = false;
     $('#modalFileInput').value = '';
-    $('#modalSourceLang').value = 'ko';
-    $('#modalMultiSpeaker').checked = false;
-    $('#modalMultiVoiceGroup').hidden = true;
-    $('#modalSingleVoiceGroup').hidden = false;
+    $('#modalSourceLang').value = prefs.sourceLang;
+    $('#modalMultiSpeaker').checked = prefs.isMulti;
+    updateVoiceOptionsVisibility(prefs.isMulti);
     $('#modalSourceLang').disabled = false;
     $('#modalMultiSpeaker').disabled = false;
     const lockedHint = $('#modalLockedHint');
     if (lockedHint) lockedHint.hidden = true;
 
-    populateGenderVoiceSelect($('#modalVoiceMale'), 'male', 'Hải Đăng');
-    populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', 'Mai Anh');
-    populateVoiceSelect($('#modalSingleVoice'), 'Hải Đăng');
+    populateGenderVoiceSelect($('#modalVoiceMale'), 'male', prefs.voiceMale);
+    populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', prefs.voiceFemale);
+    populateVoiceSelect($('#modalSingleVoice'), prefs.singleVoice);
 
     $('#modalPauseReview').checked = true;
     $('#modalFitDuration').checked = true;
@@ -1394,8 +1463,7 @@ async function openProjectModal(mode, p = null) {
 
     const isMulti = (p.multi_speaker === 1);
     $('#modalMultiSpeaker').checked = isMulti;
-    $('#modalMultiVoiceGroup').hidden = !isMulti;
-    $('#modalSingleVoiceGroup').hidden = isMulti;
+    updateVoiceOptionsVisibility(isMulti);
 
     populateGenderVoiceSelect($('#modalVoiceMale'), 'male', p.voice_male || 'Hải Đăng');
     populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', p.voice_female || 'Mai Anh');
@@ -1439,6 +1507,8 @@ async function handleModalSubmit() {
   const mixBg = parseFloat($('#modalBgRange').value) / 100.0;
   const mixNarr = parseFloat($('#modalNarrRange').value) / 100.0;
   const mixAtten = parseFloat($('#modalAttenRange').value);
+
+  saveVoicePreferences(isMulti, voiceMale, voiceFemale, singleVoice, $('#modalSourceLang').value);
 
   if (projectModalMode === 'create') {
     const file = $('#modalFileInput').files[0];
