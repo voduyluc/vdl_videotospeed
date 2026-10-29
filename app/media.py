@@ -1,13 +1,11 @@
 import os
 import wave
 
-from app.core import duration, folder, read_json, run, subtitles, update, write_json
+from app.core import duration, folder, read_json, run, subtitles, update, wav_duration, write_json
 
 
 def extract(pid):
     p = folder(pid)
-    total = duration(p / 'source')
-    update(pid, duration=total)
     tmp = p / 'stt.tmp.wav'
     run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
          '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', tmp])
@@ -17,6 +15,13 @@ def extract(pid):
     run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', p / 'source', '-map', '0:a:0',
          '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', bg_tmp])
     bg_tmp.replace(p / 'background.wav')
+    try:
+        total = duration(p / 'source')
+    except Exception:
+        total = 0.0
+    if not total or total <= 0:
+        total = wav_duration(p / 'stt.wav')
+    update(pid, duration=total)
 
 
 def build_atempo_filter(speed: float) -> str:

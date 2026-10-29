@@ -4,6 +4,7 @@ import unittest
 import uuid
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 # Import the isolated test database setup, also when this module runs separately.
 from tests.test_app import core
@@ -75,3 +76,58 @@ class ExportTests(unittest.TestCase):
         with wave.open(str(p / 'mixed.wav'), 'rb') as audio:
             self.assertEqual(audio.getnchannels(), 2)
             self.assertAlmostEqual(audio.getnframes() / audio.getframerate(), 5, places=2)
+
+
+class DurationTests(unittest.TestCase):
+    def test_duration_handles_na_and_stream_fallback(self):
+        from app.core import duration
+
+        def mock_run(args):
+            args_str = ' '.join(str(a) for a in args)
+            if 'format=duration' in args_str:
+                return 'N/A\n'
+            if 'stream=duration' in args_str:
+                return 'N/A\n14.75\n'
+            return ''
+
+        with patch('app.core.run', side_effect=mock_run):
+            self.assertEqual(duration(Path('dummy.mp4')), 14.75)
+
+    def test_duration_handles_all_na_returns_zero_without_raising(self):
+        from app.core import duration
+
+        with patch('app.core.run', return_value='N/A\n'), \
+             patch('subprocess.run', return_value=type('Proc', (), {'stderr': ''})()):
+            self.assertEqual(duration(Path('dummy.ts')), 0.0)
+
+    def test_extract_falls_back_to_wav_duration_when_source_duration_is_na(self):
+        from app.media import extract
+        pid = uuid.uuid4().hex
+        p = core.folder(pid)
+        with core.db() as c:
+            c.execute('INSERT INTO projects(id,name,state,step,duration,created,voice) VALUES(?,?,?,?,?,?,?)',
+                      (pid, 'extract test', 'running', 'extract', 0, 0, 'test'))
+        (p / 'source').write_bytes(b'fake_video')
+
+        def mock_ffmpeg(args):
+            args_str = ' '.join(str(a) for a in args)
+            if 'stt.tmp.wav' in args_str:
+                with wave.open(str(p / 'stt.tmp.wav'), 'wb') as out:
+                    out.setnchannels(1)
+                    out.setsampwidth(2)
+                    out.setframerate(16000)
+                    out.writeframes(b'\0\0' * (16000 * 3))
+            elif 'background.tmp.wav' in args_str:
+                with wave.open(str(p / 'background.tmp.wav'), 'wb') as out:
+                    out.setnchannels(2)
+                    out.setsampwidth(2)
+                    out.setframerate(48000)
+                    out.writeframes(b'\0\0\0\0' * (48000 * 3))
+            return ''
+
+        with patch('app.media.run', side_effect=mock_ffmpeg), \
+             patch('app.media.duration', return_value=0.0):
+            extract(pid)
+            with core.db() as c:
+                row = c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
+            self.assertAlmostEqual(row['duration'], 3.0, places=1)

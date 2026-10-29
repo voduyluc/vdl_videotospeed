@@ -1,6 +1,7 @@
-import json
 import hashlib
+import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -149,11 +150,6 @@ def run(args):
     return result.stdout
 
 
-def duration(path):
-    return float(run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                      '-of', 'default=noprint_wrappers=1:nokey=1', path]).strip())
-
-
 def wav_duration(path):
     """Read WAV metadata in-process; handle float WAV from TTS encoders too."""
     import wave
@@ -164,6 +160,88 @@ def wav_duration(path):
         import soundfile
         info = soundfile.info(str(path))
         return info.frames / info.samplerate
+
+
+def duration(path):
+    path_str = str(path)
+    # 0. If it's a WAV file, read metadata directly in-process
+    if path_str.lower().endswith('.wav'):
+        try:
+            val = float(wav_duration(path))
+            if val > 0:
+                return val
+        except Exception:
+            pass
+
+    # 1. Try format=duration from container header
+    try:
+        out = run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                   '-of', 'default=noprint_wrappers=1:nokey=1', path_str]).strip()
+        if out and out != 'N/A':
+            val = float(out)
+            if val > 0:
+                return val
+    except Exception:
+        pass
+
+    # 2. Try stream=duration across all streams (video, audio)
+    try:
+        out = run(['ffprobe', '-v', 'error', '-show_entries', 'stream=duration',
+                   '-of', 'default=noprint_wrappers=1:nokey=1', path_str]).strip()
+        durations = []
+        for line in out.splitlines():
+            line = line.strip()
+            if line and line != 'N/A':
+                try:
+                    d = float(line)
+                    if d > 0:
+                        durations.append(d)
+                except ValueError:
+                    pass
+        if durations:
+            return max(durations)
+    except Exception:
+        pass
+
+    # 3. Try stream tags (e.g. MKV/WebM stores DURATION: 00:01:23.456000000)
+    try:
+        out = run(['ffprobe', '-v', 'error', '-show_entries', 'stream_tags=DURATION,DURATION-eng',
+                   '-of', 'default=noprint_wrappers=1:nokey=1', path_str]).strip()
+        for line in out.splitlines():
+            line = line.strip()
+            if ':' in line:
+                parts = line.split(':')
+                if len(parts) == 3:
+                    try:
+                        h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+                        val = h * 3600 + m * 60 + s
+                        if val > 0:
+                            return val
+                    except ValueError:
+                        pass
+    except Exception:
+        pass
+
+    # 4. Fallback: scan container with ffmpeg -c copy -f null -
+    try:
+        ffmpeg_bin = os.getenv('FFMPEG_BIN', 'ffmpeg')
+        proc = subprocess.run(
+            [ffmpeg_bin, '-nostdin', '-v', 'info', '-i', path_str,
+             '-c', 'copy', '-f', 'null', '-'],
+            capture_output=True, text=True, timeout=10
+        )
+        m_dur = re.search(r'Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)', proc.stderr)
+        if m_dur:
+            h, m, s = m_dur.groups()
+            return float(h) * 3600 + float(m) * 60 + float(s)
+        matches = re.findall(r'time=(\d+):(\d+):(\d+(?:\.\d+)?)', proc.stderr)
+        if matches:
+            last = matches[-1]
+            return float(last[0]) * 3600 + float(last[1]) * 60 + float(last[2])
+    except Exception:
+        pass
+
+    return 0.0
 
 
 def get_voice_version(voice):
