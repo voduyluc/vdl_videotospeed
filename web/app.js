@@ -126,6 +126,15 @@ const I18N = {
     segmentHint: "Nhấn mốc thời gian để nghe lời gốc. Bấm \"Nghe thử\" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.",
     tabAll: "Tất cả ({0})",
     tabWarning: "⚠️ Câu vượt thời lượng ({0})",
+    ratioAll: "Tất cả vượt (> 100%)",
+    ratio110: "Vượt ≥ 110% (+10%)",
+    ratio120: "Vượt ≥ 120% (+20%)",
+    ratio130: "Vượt ≥ 130% (+30%)",
+    ratio150: "Vượt ≥ 150% (+50%)",
+    ratio200: "Vượt ≥ 200% (Gấp đôi)",
+    tabBuiltinVoices: "⭐ Giọng mặc định ({0})",
+    tabClonedVoices: "🎙️ Giọng nhân bản ({0})",
+    voiceCreatingPreview: "Đang tạo câu đọc thử...",
     tabAiCondense: "🤖 AI thu gọn câu dài ({0} câu)",
     tabAiCondenseTitle: "Dùng LLM thông minh viết lại các câu bị dài, giữ nguyên ý chính và không vượt quá số từ an toàn",
     aiCondensing: "Đang gửi yêu cầu AI...",
@@ -344,6 +353,15 @@ const I18N = {
     segmentHint: "Click timestamps to play original audio. Click \"Play\" to preview Vietnamese audio. Orange border: exceeds duration.",
     tabAll: "All ({0})",
     tabWarning: "⚠️ Over duration ({0})",
+    ratioAll: "All Over-duration (> 100%)",
+    ratio110: "Exceeds ≥ 110% (+10%)",
+    ratio120: "Exceeds ≥ 120% (+20%)",
+    ratio130: "Exceeds ≥ 130% (+30%)",
+    ratio150: "Exceeds ≥ 150% (+50%)",
+    ratio200: "Exceeds ≥ 200% (2x)",
+    tabBuiltinVoices: "⭐ Built-in Voices ({0})",
+    tabClonedVoices: "🎙️ Cloned Voices ({0})",
+    voiceCreatingPreview: "Generating preview...",
     tabAiCondense: "🤖 AI Condense Long Sentences ({0})",
     tabAiCondenseTitle: "Use LLM to rewrite long sentences concisely, preserving key meaning within safe word limits",
     aiCondensing: "Sending AI request...",
@@ -1203,62 +1221,122 @@ function render(){
     w.append(el('p',t('segmentHint'),'hint'));
 
     const warningsMap = new Map((p.warnings||[]).map(x=>[x.id, x]));
-    const warnCount = warningsMap.size;
 
+    function getSegmentRatio(s) {
+      const w = warningsMap.get(s.id);
+      const curText = drafts.get(s.id) ?? s.translation ?? '';
+      const words = countWords(curText);
+      const segDuration = Math.max(0.1, s.end - s.start);
+      if (w && w.available_seconds > 0) {
+        return w.actual_seconds / w.available_seconds;
+      }
+      const avail = (w && w.available_seconds) ? w.available_seconds : segDuration;
+      const targetWords = Math.max(1, Math.round(avail * 3.5));
+      return targetWords > 0 ? (words / targetWords) : 1.0;
+    }
+
+    function isSegmentOver(s, minRatio = 1.0) {
+      const w = warningsMap.get(s.id);
+      const r = getSegmentRatio(s);
+      if (minRatio <= 1.0) {
+        return Boolean(w || r > 1.0);
+      }
+      return r >= minRatio;
+    }
+
+    let warnRatioThreshold = 1.0;
     const filterTabs = el('div', undefined, 'filter-tabs');
     const allTab = el('button', t('tabAll', p.segments.length), 'tab-btn' + (!filterWarnings ? ' active' : ''));
     filterTabs.append(allTab);
 
-    const warnTab = el('button', t('tabWarning', warnCount), 'tab-btn warning-tab' + (filterWarnings ? ' active' : ''));
-    if(warnCount === 0) warnTab.style.opacity = '0.6';
-    filterTabs.append(warnTab);
+    const warnWrap = el('div', undefined, 'warn-filter-group');
+    const warnTab = el('button', t('tabWarning', 0), 'tab-btn warning-tab' + (filterWarnings ? ' active' : ''));
+    
+    const ratioSelect = el('select', undefined, 'warn-ratio-select');
+    const ratioOpts = [
+      {val: 1.0, text: t('ratioAll')},
+      {val: 1.1, text: t('ratio110')},
+      {val: 1.2, text: t('ratio120')},
+      {val: 1.3, text: t('ratio130')},
+      {val: 1.5, text: t('ratio150')},
+      {val: 2.0, text: t('ratio200')}
+    ];
+    for (const ro of ratioOpts) {
+      const opt = el('option', ro.text);
+      opt.value = ro.val;
+      ratioSelect.append(opt);
+    }
+    ratioSelect.onchange = () => {
+      warnRatioThreshold = parseFloat(ratioSelect.value) || 1.0;
+      filterWarnings = true;
+      page = 0;
+      show();
+    };
+    warnWrap.append(warnTab, ratioSelect);
+    filterTabs.append(warnWrap);
 
-    if(warnCount > 0 && editable){
-      const aiCondenseBtn = el('button', t('tabAiCondense', warnCount), 'tab-btn ai-condense-btn');
-      aiCondenseBtn.title = t('tabAiCondenseTitle');
-      aiCondenseBtn.onclick = async () => {
-        aiCondenseBtn.disabled = true;
-        aiCondenseBtn.textContent = t('aiCondensing');
-        try {
-          await save();
-          await api(`/projects/${p.id}/condense`, {method: 'POST'});
-          toast(t('toastAiCondenseQueued'));
-          await refresh(true);
-        } catch(err) {
-          toast(err.message);
-        } finally {
-          aiCondenseBtn.disabled = false;
-          aiCondenseBtn.textContent = t('tabAiCondense', warnCount);
-        }
-      };
-      filterTabs.append(aiCondenseBtn);
+    const aiCondenseBtn = el('button', '', 'tab-btn ai-condense-btn');
+    aiCondenseBtn.title = t('tabAiCondenseTitle');
+    aiCondenseBtn.onclick = async () => {
+      const list = getVisibleSegments();
+      const pageTargets = list.slice(page * 40, (page + 1) * 40).filter(s => isSegmentOver(s, warnRatioThreshold));
+      if (!pageTargets.length) {
+        toast('Không có câu nào cần thu gọn trên trang này.');
+        return;
+      }
+      const targetIds = pageTargets.map(s => s.id);
+      aiCondenseBtn.disabled = true;
+      aiCondenseBtn.textContent = t('aiCondensing');
+      try {
+        await save();
+        await api(`/projects/${p.id}/condense`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ segment_ids: targetIds })
+        });
+        toast(t('toastAiCondenseQueued') + ` (${targetIds.length} câu trên trang này)`);
+        await refresh(true);
+      } catch(err) {
+        toast(err.message);
+      } finally {
+        aiCondenseBtn.disabled = false;
+        show();
+      }
+    };
 
-      const trimBtn = el('button', t('tabAutoTrim', warnCount), 'tab-btn auto-trim-btn');
-      trimBtn.title = t('tabAutoTrimTitle');
-      trimBtn.onclick = () => {
-        let trimmed = 0;
-        for(const s of p.segments){
-          const w = warningsMap.get(s.id);
-          if(!w) continue;
-          const curText = drafts.get(s.id) ?? s.translation ?? '';
-          const words = curText.trim().split(/\s+/).filter(Boolean);
-          const segDuration = Math.max(0.1, s.end - s.start);
-          const availableSec = w.available_seconds || segDuration;
-          const targetMax = Math.max(1, Math.round(availableSec * 3.5));
-          if(words.length > targetMax){
-            drafts.set(s.id, words.slice(0, targetMax).join(' '));
-            dirty = true;
-            trimmed++;
-          }
+    const trimBtn = el('button', '', 'tab-btn auto-trim-btn');
+    trimBtn.title = t('tabAutoTrimTitle');
+    trimBtn.onclick = () => {
+      const list = getVisibleSegments();
+      const pageTargets = list.slice(page * 40, (page + 1) * 40).filter(s => isSegmentOver(s, warnRatioThreshold));
+      if (!pageTargets.length) {
+        toast('Không có câu nào cần cắt từ trên trang này.');
+        return;
+      }
+      let trimmed = 0;
+      for (const s of pageTargets) {
+        const w = warningsMap.get(s.id);
+        const curText = drafts.get(s.id) ?? s.translation ?? '';
+        const words = curText.trim().split(/\s+/).filter(Boolean);
+        const segDuration = Math.max(0.1, s.end - s.start);
+        const availableSec = (w && w.available_seconds) ? w.available_seconds : segDuration;
+        const targetMax = Math.max(1, Math.round(availableSec * 3.5));
+        if (words.length > targetMax) {
+          drafts.set(s.id, words.slice(0, targetMax).join(' '));
+          dirty = true;
+          trimmed++;
         }
-        if(trimmed > 0){
-          toast(t('autoTrimSuccess', trimmed));
-          show();
-        } else {
-          toast(t('autoTrimAllSafe'));
-        }
-      };
-      filterTabs.append(trimBtn);
+      }
+      if (trimmed > 0) {
+        toast(t('autoTrimSuccess', trimmed));
+        show();
+      } else {
+        toast(t('autoTrimAllSafe'));
+      }
+    };
+
+    if (editable) {
+      filterTabs.append(aiCondenseBtn, trimBtn);
     }
     w.append(filterTabs);
 
@@ -1266,7 +1344,8 @@ function render(){
     const rows=el('div',undefined,'segments');
 
     function getVisibleSegments(){
-      return filterWarnings ? p.segments.filter(s=>warningsMap.has(s.id)) : p.segments;
+      if (!filterWarnings) return p.segments;
+      return p.segments.filter(s => isSegmentOver(s, warnRatioThreshold));
     }
 
     function show(){
@@ -1276,6 +1355,25 @@ function render(){
 
       allTab.className = 'tab-btn' + (!filterWarnings ? ' active' : '');
       warnTab.className = 'tab-btn warning-tab' + (filterWarnings ? ' active' : '');
+
+      const totalMatchingWarns = p.segments.filter(s => isSegmentOver(s, warnRatioThreshold)).length;
+      warnTab.textContent = t('tabWarning', totalMatchingWarns);
+      warnTab.style.opacity = totalMatchingWarns === 0 ? '0.6' : '1.0';
+
+      const pageStart = page * 40;
+      const pageEnd = (page + 1) * 40;
+      const pageList = list.slice(pageStart, pageEnd);
+      // ONLY segments on the CURRENT PAGE that exceed ratio:
+      const pageTargets = pageList.filter(s => isSegmentOver(s, warnRatioThreshold));
+
+      if (editable) {
+        aiCondenseBtn.textContent = t('tabAiCondense', pageTargets.length);
+        trimBtn.textContent = t('tabAutoTrim', pageTargets.length);
+        aiCondenseBtn.disabled = (pageTargets.length === 0);
+        trimBtn.disabled = (pageTargets.length === 0);
+        aiCondenseBtn.style.opacity = (pageTargets.length === 0) ? '0.5' : '1.0';
+        trimBtn.style.opacity = (pageTargets.length === 0) ? '0.5' : '1.0';
+      }
 
       if(list.length === 0){
         rows.replaceChildren();
@@ -1790,82 +1888,121 @@ function initUsageModal(){
   modal.onclick = (e) => { if(e.target === modal) hide(); };
 }
 
+let currentVoiceLibTab = 'builtin';
+
 async function loadVoiceLibrary(){
   const listEl = $('#voiceList');
   if(!listEl) return;
   listEl.innerHTML = `<div class="usage-loading">${t('loadingVoices')}</div>`;
   try {
-    const voices = await api('/voices');
+    const allVoices = await api('/voices/all');
     await fetchVoicesAll();
     const uv = $('#uploadVoice');
     if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
+
+    const clonedVoices = allVoices.filter(v => v.is_clone);
+    const builtinVoices = allVoices.filter(v => !v.is_clone);
+
     listEl.replaceChildren();
-    if(!voices.length){
-      listEl.innerHTML = `<p class="hint-text" style="text-align:center;padding:20px">${t('noClonedVoices')}</p>`;
-      return;
-    }
-    for(const v of voices){
-      const item = el('div', undefined, 'voice-item');
-      const info = el('div', undefined, 'voice-info');
-      const nameEl = el('div', undefined, 'voice-name');
-      nameEl.append(el('span', '🎙️ ' + v.name));
-      const metaEl = el('div', t('voiceMeta', v.duration, new Date(v.created * 1000).toLocaleDateString()), 'voice-meta');
-      info.append(nameEl, metaEl);
 
-      const actions = el('div', undefined, 'voice-actions');
-      const sampleBtn = el('button', t('voicePlaySample'), 'voice-btn-sm secondary');
-      sampleBtn.onclick = () => {
-        stopPreview();
-        const a = new Audio(`/api/voices/${v.id}/sample`);
-        a.play();
-      };
-      actions.append(sampleBtn);
+    const tabBar = el('div', undefined, 'voice-tab-bar');
+    const builtinTabBtn = el('button', t('tabBuiltinVoices', builtinVoices.length), 'voice-tab-btn' + (currentVoiceLibTab === 'builtin' ? ' active' : ''));
+    const cloneTabBtn = el('button', t('tabClonedVoices', clonedVoices.length), 'voice-tab-btn' + (currentVoiceLibTab === 'clone' ? ' active' : ''));
 
-      if(v.has_preview){
-        const prevBtn = el('button', t('voicePlayPreview'), 'voice-btn-sm secondary');
-        prevBtn.onclick = () => {
-          stopPreview();
-          const a = new Audio(`/api/voices/${v.id}/preview?t=${Date.now()}`);
-          a.play();
-        };
-        actions.append(prevBtn);
+    builtinTabBtn.onclick = () => { currentVoiceLibTab = 'builtin'; renderList(); };
+    cloneTabBtn.onclick = () => { currentVoiceLibTab = 'clone'; renderList(); };
+    tabBar.append(builtinTabBtn, cloneTabBtn);
+    listEl.append(tabBar);
+
+    const itemsContainer = el('div', undefined, 'voice-items-container');
+    listEl.append(itemsContainer);
+
+    function renderList() {
+      builtinTabBtn.className = 'voice-tab-btn' + (currentVoiceLibTab === 'builtin' ? ' active' : '');
+      cloneTabBtn.className = 'voice-tab-btn' + (currentVoiceLibTab === 'clone' ? ' active' : '');
+      itemsContainer.replaceChildren();
+
+      const targetList = (currentVoiceLibTab === 'builtin') ? builtinVoices : clonedVoices;
+      if (!targetList.length) {
+        itemsContainer.innerHTML = `<p class="hint-text" style="text-align:center;padding:20px">${currentVoiceLibTab === 'clone' ? t('noClonedVoices') : 'Không có giọng mặc định'}</p>`;
+        return;
       }
 
-      const genPrevBtn = el('button', t('voiceGenPreview'), 'voice-btn-sm secondary');
-      genPrevBtn.onclick = async () => {
-        genPrevBtn.disabled = true;
-        genPrevBtn.textContent = t('voiceGenSending');
-        try {
-          await api(`/voices/${v.id}/preview`, {method: 'POST'});
-          toast(t('voiceGenSuccess', v.name));
-          await refresh(true);
-        } catch(err) {
-          toast(err.message);
-        } finally {
-          genPrevBtn.disabled = false;
-          genPrevBtn.textContent = t('voiceGenPreview');
+      for (const v of targetList) {
+        const item = el('div', undefined, 'voice-item');
+        const info = el('div', undefined, 'voice-info');
+        const nameEl = el('div', undefined, 'voice-name');
+        nameEl.append(el('span', (v.is_clone ? '🎙️ ' : '⭐ ') + (v.name || v.id)));
+        if (v.group) {
+          nameEl.append(el('span', v.group, 'voice-badge-group'));
         }
-      };
-      actions.append(genPrevBtn);
+        const metaText = v.is_clone
+          ? t('voiceMeta', v.duration, new Date(v.created * 1000).toLocaleDateString())
+          : (v.label || v.group || 'Giọng chuẩn hệ thống');
+        info.append(nameEl, el('div', metaText, 'voice-meta'));
 
-      const delBtn = el('button', '🗑️', 'voice-btn-sm btn-danger');
-      delBtn.title = t('deleteVoiceTitle');
-      delBtn.onclick = async () => {
-        if(!confirm(t('confirmDeleteVoice', v.name))) return;
-        try {
-          await api(`/voices/${v.id}`, {method: 'DELETE'});
-          toast(t('toastDeletedVoice', v.name));
-          await loadVoiceLibrary();
-          await refresh(true);
-        } catch(err) {
-          toast(t('toastCantDeleteVoice') + err.message);
+        const actions = el('div', undefined, 'voice-actions');
+
+        if (v.is_clone) {
+          const sampleBtn = el('button', t('voicePlaySample'), 'voice-btn-sm secondary');
+          sampleBtn.onclick = () => {
+            stopPreview();
+            const a = new Audio(`/api/voices/${v.id}/sample`);
+            a.play();
+          };
+          actions.append(sampleBtn);
         }
-      };
-      actions.append(delBtn);
 
-      item.append(info, actions);
-      listEl.append(item);
+        if (v.has_preview) {
+          const prevBtn = el('button', t('voicePlayPreview'), 'voice-btn-sm secondary');
+          prevBtn.onclick = () => {
+            stopPreview();
+            const a = new Audio(`/api/voices/${encodeURIComponent(v.id)}/preview?t=${Date.now()}`);
+            a.play();
+          };
+          actions.append(prevBtn);
+        }
+
+        const genPrevBtn = el('button', v.has_preview ? '🔄 Tạo lại' : t('voiceGenPreview'), 'voice-btn-sm ' + (v.has_preview ? 'secondary' : ''));
+        genPrevBtn.onclick = async () => {
+          genPrevBtn.disabled = true;
+          genPrevBtn.textContent = t('voiceGenSending');
+          try {
+            await api(`/voices/${encodeURIComponent(v.id)}/preview`, {method: 'POST'});
+            toast(t('voiceGenSuccess', v.name || v.id));
+            await refresh(true);
+            await loadVoiceLibrary();
+          } catch(err) {
+            toast(err.message);
+            genPrevBtn.disabled = false;
+            genPrevBtn.textContent = v.has_preview ? '🔄 Tạo lại' : t('voiceGenPreview');
+          }
+        };
+        actions.append(genPrevBtn);
+
+        if (v.is_clone) {
+          const delBtn = el('button', '🗑️', 'voice-btn-sm btn-danger');
+          delBtn.title = t('deleteVoiceTitle');
+          delBtn.onclick = async () => {
+            if(!confirm(t('confirmDeleteVoice', v.name))) return;
+            try {
+              await api(`/voices/${v.id}`, {method: 'DELETE'});
+              toast(t('toastDeletedVoice', v.name));
+              await loadVoiceLibrary();
+              await refresh(true);
+            } catch(err) {
+              toast(t('toastCantDeleteVoice') + err.message);
+            }
+          };
+          actions.append(delBtn);
+        }
+
+        item.append(info, actions);
+        itemsContainer.append(item);
+      }
     }
+
+    renderList();
   } catch(err) {
     listEl.innerHTML = `<div class="error">${err.message}</div>`;
   }

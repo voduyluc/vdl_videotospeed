@@ -336,6 +336,22 @@ class ApiTests(unittest.TestCase):
         r_del_ok = self.client.delete(f'/api/voices/{vid}')
         self.assertEqual(r_del_ok.status_code, 200)
 
+        # Built-in default voice preview trigger
+        r_builtin_prev = self.client.post('/api/voices/Hải Đăng/preview', json={'text': 'Thử giọng Hải Đăng'})
+        self.assertEqual(r_builtin_prev.status_code, 200)
+        task_id = r_builtin_prev.json()['task_id']
+        task_dir = core.folder(task_id)
+        self.assertTrue((task_dir / 'segments.json').exists())
+        segs = core.read_json(task_dir / 'segments.json')
+        self.assertEqual(segs[0]['translation'], 'Thử giọng Hải Đăng')
+
+        # Built-in preview get
+        voice_dest = core.DATA / 'voices' / 'Hải Đăng' / 'preview.wav'
+        voice_dest.parent.mkdir(parents=True, exist_ok=True)
+        voice_dest.write_bytes(b'fake_preview_audio')
+        r_get_builtin = self.client.get('/api/voices/Hải Đăng/preview')
+        self.assertEqual(r_get_builtin.status_code, 200)
+
     def test_audio_mix_ducking_filter_and_settings(self):
         from app.media import build_ducking_filter
         f_duck = build_ducking_filter(0.3, 1.2, ducking=True, attenuation=18.0)

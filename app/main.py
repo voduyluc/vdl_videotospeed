@@ -92,10 +92,18 @@ def all_voices():
     with db() as c:
         clones = [dict(r) for r in c.execute('SELECT * FROM voices ORDER BY created DESC')]
     clone_items = [
-        {'id': v['id'], 'label': f"🎙️ {v['name']} ({v['duration']}s - Clone)", 'group': '⭐ Giọng nhân bản (Clone)', 'is_clone': True}
+        {'id': v['id'], 'name': v['name'], 'label': f"🎙️ {v['name']} ({v['duration']}s - Clone)", 'group': '⭐ Giọng nhân bản (Clone)', 'is_clone': True,
+         'duration': v.get('duration', 0), 'created': v.get('created', 0),
+         'has_preview': bool((v.get('preview_path') and Path(v['preview_path']).exists()) or (DATA / 'voices' / v['id'] / 'preview.wav').exists())}
         for v in clones
     ]
-    return clone_items + VOICES
+    builtin_items = [
+        {'id': v['id'], 'name': v['id'], 'label': v['label'], 'group': v['group'], 'is_clone': False,
+         'duration': 4.0, 'created': 0,
+         'has_preview': (DATA / 'voices' / v['id'] / 'preview.wav').exists()}
+        for v in VOICES
+    ]
+    return clone_items + builtin_items
 
 
 @app.get('/api/projects')
@@ -469,11 +477,15 @@ def get_voice_sample(vid: str):
 
 @app.get('/api/voices/{vid}/preview')
 def get_voice_preview(vid: str):
-    with db() as c:
-        row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
-    if not row:
-        raise HTTPException(404, 'Không tìm thấy giọng')
-    path = Path(row['preview_path']) if row.get('preview_path') else DATA / 'voices' / vid / 'preview.wav'
+    builtin_voice_ids = {v['id'] for v in VOICES}
+    if vid in builtin_voice_ids:
+        path = DATA / 'voices' / vid / 'preview.wav'
+    else:
+        with db() as c:
+            row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
+        if not row:
+            raise HTTPException(404, 'Không tìm thấy giọng')
+        path = Path(row['preview_path']) if row.get('preview_path') else DATA / 'voices' / vid / 'preview.wav'
     if not path.exists():
         raise HTTPException(404, 'Chưa có file nghe thử cho giọng này')
     return FileResponse(path, media_type='audio/wav')
@@ -485,12 +497,18 @@ class VoicePreviewBody(BaseModel):
 
 @app.post('/api/voices/{vid}/preview')
 def trigger_voice_preview(vid: str, body: VoicePreviewBody = None):
-    with db() as c:
-        v_row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
-    if not v_row:
-        raise HTTPException(404, 'Không tìm thấy giọng')
+    builtin_voice_ids = {v['id'] for v in VOICES}
+    if vid in builtin_voice_ids:
+        voice_name = vid
+    else:
+        with db() as c:
+            v_row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
+        if not v_row:
+            raise HTTPException(404, 'Không tìm thấy giọng')
+        voice_name = v_row['name']
+    default_text = f"Xin chào, đây là câu đọc thử nghiệm bằng giọng {voice_name}."
     preview_text = (body.text.strip() if body and body.text and body.text.strip()
-                    else 'Xin chào, đây là câu đọc thử nghiệm bằng giọng nhân bản của tôi.')
+                    else default_text)
     preview_pid = secrets.token_hex(16)
     p_dir = folder(preview_pid)
     write_json(p_dir / 'segments.json', [
@@ -498,7 +516,7 @@ def trigger_voice_preview(vid: str, body: VoicePreviewBody = None):
     ])
     with db() as c:
         c.execute('INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit) VALUES(?,?,?,?,?,?,?,?)',
-                  (preview_pid, f"Voice Preview: {v_row['name']}", 'queued', 'tts', time.time(),
+                  (preview_pid, f"Voice Preview: {voice_name}", 'queued', 'tts', time.time(),
                    vid, 0, 1))
     return {'ok': True, 'task_id': preview_pid}
 
