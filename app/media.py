@@ -56,9 +56,10 @@ def export(pid):
         raise ValueError('Incomplete TTS manifest')
     from app.core import db
     with db() as c:
-        row = c.execute('SELECT duration, auto_fit FROM projects WHERE id=?', (pid,)).fetchone()
-        total = row['duration']
-        auto_fit = row['auto_fit'] if row and 'auto_fit' in row.keys() else 1
+        row = c.execute('SELECT duration, auto_fit, source_language FROM projects WHERE id=?', (pid,)).fetchone()
+        row = dict(row) if row else {}
+        total = row.get('duration', 0)
+        auto_fit = row.get('auto_fit', 1)
     max_speed = float(os.getenv('MAX_SPEED', '1.18'))
     if not 1 <= max_speed <= 2:
         raise ValueError('MAX_SPEED must be between 1 and 2')
@@ -135,7 +136,7 @@ def export(pid):
          '-codec:a', 'libmp3lame', '-b:a', '192k', p / 'narration.tmp.mp3'])
     (p / 'narration.tmp.mp3').replace(p / 'narration.mp3')
 
-    src_lang = row.get('source_language', 'ko') if row and 'source_language' in row.keys() else 'ko'
+    src_lang = row.get('source_language') or 'ko'
     for name, key in [(src_lang, 'source'), ('vi', 'translation')]:
         (p / f'{name}.srt').write_text(subtitles(segments, key), 'utf-8')
 

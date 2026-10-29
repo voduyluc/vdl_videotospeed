@@ -476,6 +476,13 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(vip_updated['is_top'])
         self.assertEqual(vip_updated['group'], '⭐ Đề xuất hàng đầu')
 
+        # Test clone voice preview get endpoint
+        clone_prev_dest = core.DATA / 'voices' / vid / 'preview.wav'
+        clone_prev_dest.parent.mkdir(parents=True, exist_ok=True)
+        clone_prev_dest.write_bytes(b'fake_clone_preview_audio')
+        r_get_clone = self.client.get(f'/api/voices/{vid}/preview')
+        self.assertEqual(r_get_clone.status_code, 200)
+
         # Delete clone voice cleans up voice_favorites
         self.client.delete(f'/api/voices/{vid}')
         with core.db() as c:

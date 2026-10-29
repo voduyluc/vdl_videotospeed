@@ -565,6 +565,7 @@ def get_voice_preview(vid: str):
             row = c.execute('SELECT * FROM voices WHERE id=?', (vid,)).fetchone()
         if not row:
             raise HTTPException(404, 'Không tìm thấy giọng')
+        row = dict(row)
         path = Path(row['preview_path']) if row.get('preview_path') else DATA / 'voices' / vid / 'preview.wav'
     if not path.exists():
         raise HTTPException(404, 'Chưa có file nghe thử cho giọng này')
