@@ -33,7 +33,7 @@ const I18N = {
     toastSettingsSaved: "Đã lưu cài đặt dự án thành công!",
     mixSettingsSummary: "🎛️ Thiết lập phối âm nền & Ducking",
     btnMixSettings: "⚙️ Cài đặt âm lượng",
-    headerSubtitle: "Video tiếng Hàn, Anh, Nhật → thuyết minh tiếng Việt · Local GPU",
+    headerSubtitle: "Video tiếng Hàn, Anh, Nhật, Trung → thuyết minh tiếng Việt · Local GPU",
     voiceLibTitle: "Quản lý giọng nhân bản (Voice Cloning)",
     voiceLibBtn: "🎙️ Giọng Clone",
     usageBtnTitle: "Xem thống kê tài nguyên (VRAM, CPU, RAM, Ổ đĩa)",
@@ -42,11 +42,12 @@ const I18N = {
     closeBtn: "Đóng",
     refreshTitle: "Làm mới",
     uploadTitle: "Thêm video",
-    uploadDesc: "Hỗ trợ video tiếng Hàn, Anh hoặc Nhật. Hệ thống sử dụng track audio đầu tiên.",
+    uploadDesc: "Hỗ trợ video tiếng Hàn, Anh, Nhật hoặc Trung. Hệ thống sử dụng track audio đầu tiên.",
     sourceLangLabel: "Ngôn ngữ video nguồn:",
     langKo: "🇰🇷 Tiếng Hàn (Korean)",
     langEn: "🇺🇸 Tiếng Anh (English)",
     langJa: "🇯🇵 Tiếng Nhật (Japanese)",
+    langZh: "🇨🇳 Tiếng Trung (Chinese)",
     advancedOptions: "⚙️ Tùy chọn nâng cao",
     voiceLabel: "Giọng đọc:",
     pauseReviewTitle: "Dừng lại sau khi dịch để kiểm tra và chỉnh sửa trước khi tổng hợp giọng",
@@ -266,9 +267,11 @@ const I18N = {
     lang_ko: "Tiếng Hàn",
     lang_en: "Tiếng Anh",
     lang_ja: "Tiếng Nhật",
+    lang_zh: "Tiếng Trung",
     badge_ko: "🇰🇷 Tiếng Hàn",
     badge_en: "🇺🇸 Tiếng Anh",
-    badge_ja: "🇯🇵 Tiếng Nhật"
+    badge_ja: "🇯🇵 Tiếng Nhật",
+    badge_zh: "🇨🇳 Tiếng Trung"
   },
   en: {
     addProjectBtn: "➕ Add New Video",
@@ -296,7 +299,7 @@ const I18N = {
     toastSettingsSaved: "Project settings saved successfully!",
     mixSettingsSummary: "🎛️ Background Audio & Ducking Settings",
     btnMixSettings: "⚙️ Volume Settings",
-    headerSubtitle: "Korean, English, Japanese Video → Vietnamese Dubbing · Local GPU",
+    headerSubtitle: "Korean, English, Japanese, Chinese Video → Vietnamese Dubbing · Local GPU",
     voiceLibTitle: "Manage Cloned Voices (Voice Cloning)",
     voiceLibBtn: "🎙️ Cloned Voices",
     usageBtnTitle: "View System Resource Usage (VRAM, CPU, RAM, Disk)",
@@ -305,11 +308,12 @@ const I18N = {
     closeBtn: "Close",
     refreshTitle: "Refresh",
     uploadTitle: "Add Video",
-    uploadDesc: "Supports Korean, English, or Japanese videos. Uses first audio track.",
+    uploadDesc: "Supports Korean, English, Japanese, or Chinese videos. Uses first audio track.",
     sourceLangLabel: "Source Video Language:",
     langKo: "🇰🇷 Korean",
     langEn: "🇺🇸 English",
     langJa: "🇯🇵 Japanese",
+    langZh: "🇨🇳 Chinese",
     advancedOptions: "⚙️ Advanced Options",
     voiceLabel: "Voice:",
     pauseReviewTitle: "Pause after translation to review and edit before voice synthesis",
@@ -529,9 +533,11 @@ const I18N = {
     lang_ko: "Korean",
     lang_en: "English",
     lang_ja: "Japanese",
+    lang_zh: "Chinese",
     badge_ko: "🇰🇷 Korean",
     badge_en: "🇺🇸 English",
-    badge_ja: "🇯🇵 Japanese"
+    badge_ja: "🇯🇵 Japanese",
+    badge_zh: "🇨🇳 Chinese"
   }
 };
 
@@ -1376,10 +1382,11 @@ function renderDownloadSection(p){
     [`${srcLang}.srt`]: { label: t('dlSrcSrt', srcLabel), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_${srcLang}.srt` },
     'ko.srt': { label: t('dlSrcSrt', t('lang_ko')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ko.srt` },
     'en.srt': { label: t('dlSrcSrt', t('lang_en')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_en.srt` },
-    'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ja.srt` }
+    'ja.srt': { label: t('dlSrcSrt', t('lang_ja')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_ja.srt` },
+    'zh.srt': { label: t('dlSrcSrt', t('lang_zh')), primary: false, desc: t('dlSrcSrtDesc'), dlName: `${stem}_zh.srt` }
   };
 
-  const order = ['dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt'];
+  const order = ['dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt', 'zh.srt'];
   const sorted = [...p.exports].sort((a,b) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);

@@ -85,7 +85,7 @@ DEFAULT_TOP_VOICES = {
 }
 
 
-SUPPORTED_LANGUAGES = {'ko': 'Tiếng Hàn', 'en': 'Tiếng Anh', 'ja': 'Tiếng Nhật'}
+SUPPORTED_LANGUAGES = {'ko': 'Tiếng Hàn', 'en': 'Tiếng Anh', 'ja': 'Tiếng Nhật', 'zh': 'Tiếng Trung'}
 
 
 class VoiceTopBody(BaseModel):
@@ -473,6 +473,7 @@ def get_download_filename(project_name: str, export_name: str, src_lang: str = '
         'ko.srt': f'{stem}_ko.srt',
         'en.srt': f'{stem}_en.srt',
         'ja.srt': f'{stem}_ja.srt',
+        'zh.srt': f'{stem}_zh.srt',
     }
     return suffixes.get(export_name, f'{stem}_{export_name}')
 
@@ -490,7 +491,7 @@ def make_content_disposition(filename: str, disposition: str = 'attachment') -> 
 def asset(pid: str, name: str):
     row = project(pid)
     src_lang = row.get('source_language') or 'ko'
-    allowed = ('source', 'dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'vi.srt', f'{src_lang}.srt', 'ko.srt', 'en.srt', 'ja.srt')
+    allowed = ('source', 'dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'vi.srt', f'{src_lang}.srt', 'ko.srt', 'en.srt', 'ja.srt', 'zh.srt')
     if name not in allowed:
         raise HTTPException(404)
     path = folder(pid) / name

@@ -411,6 +411,21 @@ class ApiTests(unittest.TestCase):
         self.assertIn('japan_ja.srt', r_sub.headers.get('content-disposition', ''))
         self.assertIn('こんにちは', r_sub.text)
 
+        # Chinese language support (zh)
+        r_zh = self.client.post('/api/projects', files={'file': ('chinese_video.mp4', b'video', 'video/mp4')},
+                                data={'source_language': 'zh'})
+        self.assertEqual(r_zh.status_code, 200)
+        pid_zh = r_zh.json()['id']
+        detail_zh = self.client.get(f'/api/projects/{pid_zh}').json()
+        self.assertEqual(detail_zh['source_language'], 'zh')
+        zh_segments = [{'id': 's1', 'start': 0, 'end': 2, 'source': '你好世界', 'translation': 'Chào thế giới'}]
+        core.write_json(core.folder(pid_zh) / 'segments.json', zh_segments)
+        core.update(pid_zh, state='review', step='tts')
+        r_sub_zh = self.client.get(f'/api/projects/{pid_zh}/files/zh.srt')
+        self.assertEqual(r_sub_zh.status_code, 200)
+        self.assertIn('chinese_video_zh.srt', r_sub_zh.headers.get('content-disposition', ''))
+        self.assertIn('你好世界', r_sub_zh.text)
+
     def test_cloned_voice_crud_protection_and_cache_version(self):
         import io
         buf = io.BytesIO()

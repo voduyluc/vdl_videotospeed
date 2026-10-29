@@ -134,7 +134,7 @@ def translate(pid, shared_client=None):
     auto_trim = row['auto_trim_overflow'] if row and 'auto_trim_overflow' in row.keys() and row['auto_trim_overflow'] is not None else 0
     trim_pct = row['trim_threshold_pct'] if row and 'trim_threshold_pct' in row.keys() and row['trim_threshold_pct'] is not None else 120
     total = row['duration'] if row and 'duration' in row.keys() and row['duration'] is not None else 0
-    lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật'}
+    lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật', 'zh': 'tiếng Trung'}
     lang_label = lang_names.get(lang, 'tiếng nước ngoài')
     if fit_duration:
         system = (f'Bạn dịch hội thoại phim {lang_label} sang tiếng Việt để đọc thuyết minh. '
@@ -243,7 +243,7 @@ def condense(pid, shared_client=None):
     total = row['duration'] if row and 'duration' in row.keys() else 0
     lang = row['source_language'] if row and 'source_language' in row.keys() and row['source_language'] else 'ko'
     trim_pct = row['trim_threshold_pct'] if row and 'trim_threshold_pct' in row.keys() and row['trim_threshold_pct'] else 120
-    lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật'}
+    lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật', 'zh': 'tiếng Trung'}
     lang_label = lang_names.get(lang, 'tiếng nước ngoài')
 
     warnings = read_json(p / 'timing-warnings.json', [])
