@@ -6,5 +6,5 @@ if __name__ == '__main__':
         from app.translate import translate
         translate(pid)
     else:
-        from app.media import extract, export
-        {'extract': extract, 'export': export}[step](pid)
+        from app.media import extract, export, mix
+        {'extract': extract, 'export': export, 'mix': mix}[step](pid)

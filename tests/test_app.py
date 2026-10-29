@@ -173,6 +173,114 @@ class ApiTests(unittest.TestCase):
         self.assertIn('models_bytes', data['disk']['breakdown'])
         self.assertIn('app_and_env_bytes', data['disk']['breakdown'])
 
+    def test_source_language_upload_validation_and_subtitles(self):
+        # Valid language en
+        r = self.client.post('/api/projects', files={'file': ('english.mp4', b'video', 'video/mp4')},
+                             data={'source_language': 'en'})
+        self.assertEqual(r.status_code, 200)
+        pid_en = r.json()['id']
+        detail_en = self.client.get(f'/api/projects/{pid_en}').json()
+        self.assertEqual(detail_en['source_language'], 'en')
+
+        # Invalid language
+        r_inv = self.client.post('/api/projects', files={'file': ('test.mp4', b'video', 'video/mp4')},
+                                 data={'source_language': 'fr'})
+        self.assertEqual(r_inv.status_code, 400)
+
+        # Subtitles for ja
+        r_ja = self.client.post('/api/projects', files={'file': ('japan.mp4', b'video', 'video/mp4')},
+                                data={'source_language': 'ja'})
+        pid_ja = r_ja.json()['id']
+        segments = [{'id': 's1', 'start': 0, 'end': 2, 'source': 'こんにちは', 'translation': 'Xin chào'}]
+        core.write_json(core.folder(pid_ja) / 'segments.json', segments)
+        core.update(pid_ja, state='review', step='tts')
+        r_sub = self.client.get(f'/api/projects/{pid_ja}/files/ja.srt')
+        self.assertEqual(r_sub.status_code, 200)
+        self.assertIn('japan_ja.srt', r_sub.headers.get('content-disposition', ''))
+        self.assertIn('こんにちは', r_sub.text)
+
+    def test_cloned_voice_crud_protection_and_cache_version(self):
+        import io
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b'\x01\x00' * 72000)  # 3 seconds
+        wav_bytes = buf.getvalue()
+
+        # Create clone voice
+        r = self.client.post('/api/voices', data={'name': 'Giọng Chị Lan'},
+                             files={'file': ('sample.wav', wav_bytes, 'audio/wav')})
+        self.assertEqual(r.status_code, 200)
+        v_data = r.json()
+        vid = v_data['id']
+        self.assertTrue(vid.startswith('clone_'))
+        self.assertGreater(v_data['duration'], 0)
+
+        # List voices
+        r_list = self.client.get('/api/voices')
+        self.assertEqual(r_list.status_code, 200)
+        self.assertTrue(any(v['id'] == vid for v in r_list.json()))
+
+        # List all voices (for select dropdown)
+        r_all = self.client.get('/api/voices/all')
+        self.assertEqual(r_all.status_code, 200)
+        self.assertTrue(any(v['id'] == vid and v['group'] == '⭐ Giọng nhân bản (Clone)' for v in r_all.json()))
+
+        # Versioned cache key test
+        key1 = core.tts_key('Xin chào', vid)
+        key_preset = core.tts_key('Xin chào', 'Hải Đăng')
+        self.assertNotEqual(key1, key_preset)
+
+        # Use voice in a project -> delete should be protected!
+        pid = self.create()
+        core.update(pid, voice=vid)
+        r_del_blocked = self.client.delete(f'/api/voices/{vid}')
+        self.assertEqual(r_del_blocked.status_code, 400)
+        self.assertIn('đang được', r_del_blocked.text)
+
+        # Unbind project voice -> delete should succeed
+        core.update(pid, voice='Hải Đăng')
+        r_del_ok = self.client.delete(f'/api/voices/{vid}')
+        self.assertEqual(r_del_ok.status_code, 200)
+
+    def test_audio_mix_ducking_filter_and_settings(self):
+        from app.media import build_ducking_filter
+        f_duck = build_ducking_filter(0.3, 1.2, ducking=True, attenuation=18.0)
+        self.assertIn('sidechaincompress', f_duck)
+        self.assertIn('volume=0.300', f_duck)
+        self.assertIn('volume=1.200', f_duck)
+
+        f_noduck = build_ducking_filter(0.2, 1.0, ducking=False)
+        self.assertNotIn('sidechaincompress', f_noduck)
+        self.assertIn('amix', f_noduck)
+
+        pid = self.create()
+        # Update mix settings
+        r = self.client.patch(f'/api/projects/{pid}/settings', json={
+            'mix_background_gain': 0.35,
+            'mix_narration_gain': 1.1,
+            'mix_ducking': True,
+            'mix_ducking_attenuation': 20.0
+        })
+        self.assertEqual(r.status_code, 200)
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['mix_background_gain'], 0.35)
+        self.assertEqual(proj['mix_narration_gain'], 1.1)
+        self.assertEqual(proj['mix_ducking'], 1)
+        self.assertEqual(proj['mix_ducking_attenuation'], 20.0)
+
+        # Remix action requires narration.wav
+        r_remix_err = self.client.post(f'/api/projects/{pid}/remix')
+        self.assertEqual(r_remix_err.status_code, 409)
+
+        # Create fake narration.wav -> remix should queue mix step
+        (core.folder(pid) / 'narration.wav').write_bytes(b'fake')
+        r_remix_ok = self.client.post(f'/api/projects/{pid}/remix')
+        self.assertEqual(r_remix_ok.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').json()['step'], 'mix')
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

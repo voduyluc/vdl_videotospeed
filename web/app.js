@@ -66,17 +66,32 @@ const VOICES = [
     { id: "Kim Thanh", label: "Kim Thanh (Nữ Nam)" }
   ]}
 ];
-function buildVoiceSelect(currentVoice){
-  const select = el('select');
-  select.id = 'voice';
+let cachedVoicesAll = [];
+async function fetchVoicesAll(){
+  try {
+    cachedVoicesAll = await api('/voices/all');
+  } catch(e) {
+    cachedVoicesAll = [];
+  }
+  return cachedVoicesAll;
+}
+function populateVoiceSelect(select, currentVoice){
+  select.replaceChildren();
+  const list = cachedVoicesAll.length ? cachedVoicesAll : VOICES.flatMap(g => g.items.map(v => ({...v, group: g.group})));
+  const groups = {};
+  for(const v of list){
+    const grpName = v.group || 'Khác';
+    if(!groups[grpName]) groups[grpName] = [];
+    groups[grpName].push(v);
+  }
   let matched = false;
-  for(const g of VOICES){
+  for(const [grpName, items] of Object.entries(groups)){
     const grp = el('optgroup');
-    grp.label = g.group;
-    for(const v of g.items){
+    grp.label = grpName;
+    for(const v of items){
       const opt = el('option', v.label);
       opt.value = v.id;
-      if(v.id === currentVoice){opt.selected = true; matched = true;}
+      if(v.id === currentVoice){ opt.selected = true; matched = true; }
       grp.append(opt);
     }
     select.append(grp);
@@ -90,6 +105,11 @@ function buildVoiceSelect(currentVoice){
     grp.append(opt);
     select.prepend(grp);
   }
+}
+function buildVoiceSelect(currentVoice){
+  const select = el('select');
+  select.id = 'voice';
+  populateVoiceSelect(select, currentVoice);
   select.onchange = ()=>{stopPreview(); dirty = true;};
   return select;
 }
@@ -181,18 +201,11 @@ function renderSegments(container, editable, warningsMap, list){
     container.append(row);
   }
 }
-function initUploadForm(){
-  const uploadVoice=$('#uploadVoice');
-  if(uploadVoice&&!uploadVoice.children.length){
-    for(const g of VOICES){
-      const grp=el('optgroup');grp.label=g.group;
-      for(const v of g.items){
-        const opt=el('option',v.label);opt.value=v.id;
-        if(v.id==='Hải Đăng')opt.selected=true;
-        grp.append(opt);
-      }
-      uploadVoice.append(grp);
-    }
+async function initUploadForm(){
+  await fetchVoicesAll();
+  const uploadVoice = $('#uploadVoice');
+  if(uploadVoice){
+    populateVoiceSelect(uploadVoice, 'Hải Đăng');
   }
 }
 function renderPipeline(p){
@@ -201,7 +214,8 @@ function renderPipeline(p){
     {key:'stt',name:'2. Nhận dạng STT'},
     {key:'translate',name:'3. Dịch thuật'},
     {key:'tts',name:'4. Tạo giọng TTS'},
-    {key:'export',name:'5. Xuất audio'}
+    {key:'export',name:'5. Ghép lời thoại'},
+    {key:'mix',name:'6. Phối âm nền'}
   ];
   const keys=steps.map(s=>s.key);
   const currentIdx=keys.indexOf(p.step);
@@ -223,9 +237,9 @@ function renderPipeline(p){
     overallPct=100;
   }else if(currentIdx>=0){
     if(state==='review'){
-      overallPct=60;
+      overallPct=50;
     }else{
-      overallPct=Math.min(99,Math.round(currentIdx*20+stagePct*0.2));
+      overallPct=Math.min(99,Math.round(currentIdx*(100/6)+stagePct*(1/6)));
     }
   }
 
@@ -315,27 +329,41 @@ function renderDownloadSection(p){
   }
   card.append(header);
 
-  if(p.exports.includes('narration.mp3') || p.exports.includes('narration.wav')){
+  const playFile = p.exports.includes('mixed.mp3') ? 'mixed.mp3' :
+                   p.exports.includes('mixed.wav') ? 'mixed.wav' :
+                   p.exports.includes('narration.mp3') ? 'narration.mp3' :
+                   p.exports.includes('narration.wav') ? 'narration.wav' : null;
+  if(playFile){
     const playerBox = el('div', undefined, 'audio-player-box');
-    const playerLabel = el('div', 'Nghe thử bản thuyết minh đã ghép:', 'audio-player-label');
+    const playerTitle = playFile.startsWith('mixed') ? 'Nghe thử bản phối hoàn chỉnh (Lời Việt + Nền gốc hạ âm):' : 'Nghe thử bản thuyết minh đã ghép:';
+    const playerLabel = el('div', playerTitle, 'audio-player-label');
     const audio = el('audio');
     audio.controls = true;
     audio.preload = 'metadata';
-    audio.src = `/api/projects/${p.id}/files/${p.exports.includes('narration.mp3') ? 'narration.mp3' : 'narration.wav'}`;
+    audio.src = `/api/projects/${p.id}/files/${playFile}`;
     playerBox.append(playerLabel, audio);
     card.append(playerBox);
   }
 
   const btnGroup = el('div', undefined, 'download-btn-group');
   const stem = (p.name || 'video').replace(/\.[^/.]+$/, '').trim() || 'video';
+  const srcLang = p.source_language || 'ko';
+  const langLabels = {ko: 'Tiếng Hàn', en: 'Tiếng Anh', ja: 'Tiếng Nhật'};
+  const srcLabel = langLabels[srcLang] || srcLang.toUpperCase();
+
   const meta = {
-    'narration.mp3': { label: '🎵 Tải Audio MP3 (Thuyết minh)', primary: true, desc: 'Định dạng phổ biến, dung lượng nhẹ', dlName: `${stem}_thuyet_minh.mp3` },
-    'narration.wav': { label: '🎙️ Tải Audio WAV (Lossless)', primary: false, desc: 'Âm thanh chất lượng gốc cao nhất', dlName: `${stem}_thuyet_minh.wav` },
+    'mixed.mp3': { label: '🌟 Tải Audio Phối Nền (MP3)', primary: true, desc: 'Lời Việt nổi trên nền gốc tự động hạ (Ducking)', dlName: `${stem}_mixed.mp3` },
+    'mixed.wav': { label: '🎙️ Tải Audio Phối Nền (WAV)', primary: false, desc: 'Âm thanh phối chuẩn phòng thu lossless', dlName: `${stem}_mixed.wav` },
+    'narration.mp3': { label: '🎵 Tải Thuyết Minh Riêng (MP3)', primary: false, desc: 'Chỉ có giọng đọc tiếng Việt', dlName: `${stem}_thuyet_minh.mp3` },
+    'narration.wav': { label: '🎙️ Tải Thuyết Minh Riêng (WAV)', primary: false, desc: 'Giọng đọc gốc chất lượng cao nhất', dlName: `${stem}_thuyet_minh.wav` },
     'vi.srt': { label: '📝 Phụ đề Tiếng Việt (.SRT)', primary: false, desc: 'Sub chuẩn khớp từng giây', dlName: `${stem}_vi.srt` },
-    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ko.srt` }
+    [`${srcLang}.srt`]: { label: `🌐 Phụ đề ${srcLabel} (.SRT)`, primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_${srcLang}.srt` },
+    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ko.srt` },
+    'en.srt': { label: '🇺🇸 Phụ đề Tiếng Anh (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_en.srt` },
+    'ja.srt': { label: '🇯🇵 Phụ đề Tiếng Nhật (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ja.srt` }
   };
 
-  const order = ['narration.mp3', 'narration.wav', 'vi.srt', 'ko.srt'];
+  const order = ['mixed.mp3', 'mixed.wav', 'narration.mp3', 'narration.wav', 'vi.srt', `${srcLang}.srt`, 'ko.srt', 'en.srt', 'ja.srt'];
   const sorted = [...p.exports].sort((a,b) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);
@@ -357,6 +385,141 @@ function renderDownloadSection(p){
   }
 
   card.append(btnGroup);
+  return card;
+}
+function renderMixCard(p){
+  const card = el('div', undefined, 'mix-card');
+  const header = el('div', undefined, 'mix-header');
+  header.append(el('h3', '🎛️ Phối Âm Nền & Lời Thuyết Minh (Background & Ducking)'));
+  card.append(header);
+
+  const grid = el('div', undefined, 'mix-grid');
+
+  const duckCtrl = el('div', undefined, 'mix-control');
+  const duckLabel = el('label', undefined, 'checkbox-label');
+  const duckCb = el('input');
+  duckCb.type = 'checkbox';
+  duckCb.checked = (p.mix_ducking !== 0);
+  duckLabel.append(duckCb, el('span', 'Tự hạ nền khi có lời đọc (Ducking)'));
+  duckCtrl.append(duckLabel);
+  duckCtrl.append(el('small', 'Tự động giảm âm nền khi có tiếng Việt, trả lại âm lượng khi ngừng.', 'hint-text'));
+  grid.append(duckCtrl);
+
+  const bgCtrl = el('div', undefined, 'mix-control');
+  const bgLabel = el('label');
+  const bgValSpan = el('span', `${Math.round((p.mix_background_gain ?? 0.25) * 100)}%`, 'val');
+  bgLabel.append(el('span', 'Âm lượng nền gốc:'), bgValSpan);
+  const bgRange = el('input');
+  bgRange.type = 'range';
+  bgRange.min = '0'; bgRange.max = '100'; bgRange.step = '5';
+  bgRange.value = Math.round((p.mix_background_gain ?? 0.25) * 100);
+  bgRange.oninput = () => { bgValSpan.textContent = `${bgRange.value}%`; };
+  bgCtrl.append(bgLabel, bgRange);
+  grid.append(bgCtrl);
+
+  const narrCtrl = el('div', undefined, 'mix-control');
+  const narrLabel = el('label');
+  const narrValSpan = el('span', `${Math.round((p.mix_narration_gain ?? 1.0) * 100)}%`, 'val');
+  narrLabel.append(el('span', 'Âm lượng thuyết minh:'), narrValSpan);
+  const narrRange = el('input');
+  narrRange.type = 'range';
+  narrRange.min = '20'; narrRange.max = '150'; narrRange.step = '5';
+  narrRange.value = Math.round((p.mix_narration_gain ?? 1.0) * 100);
+  narrRange.oninput = () => { narrValSpan.textContent = `${narrRange.value}%`; };
+  narrCtrl.append(narrLabel, narrRange);
+  grid.append(narrCtrl);
+
+  const attenCtrl = el('div', undefined, 'mix-control');
+  const attenLabel = el('label');
+  const attenValSpan = el('span', `-${Math.round(p.mix_ducking_attenuation ?? 16)} dB`, 'val');
+  attenLabel.append(el('span', 'Mức giảm nền (Ducking):'), attenValSpan);
+  const attenRange = el('input');
+  attenRange.type = 'range';
+  attenRange.min = '8'; attenRange.max = '28'; attenRange.step = '2';
+  attenRange.value = Math.round(p.mix_ducking_attenuation ?? 16);
+  attenRange.oninput = () => { attenValSpan.textContent = `-${attenRange.value} dB`; };
+  attenCtrl.append(attenLabel, attenRange);
+  grid.append(attenCtrl);
+
+  card.append(grid);
+
+  const saveMixSettings = async () => {
+    try {
+      await api(`/projects/${p.id}/settings`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          mix_ducking: duckCb.checked ? 1 : 0,
+          mix_background_gain: parseFloat(bgRange.value) / 100.0,
+          mix_narration_gain: parseFloat(narrRange.value) / 100.0,
+          mix_ducking_attenuation: parseFloat(attenRange.value)
+        })
+      });
+      p.mix_ducking = duckCb.checked ? 1 : 0;
+      p.mix_background_gain = parseFloat(bgRange.value) / 100.0;
+      p.mix_narration_gain = parseFloat(narrRange.value) / 100.0;
+      p.mix_ducking_attenuation = parseFloat(attenRange.value);
+    } catch(err) {
+      toast('Lỗi lưu cài đặt mix: ' + err.message);
+    }
+  };
+
+  duckCb.onchange = saveMixSettings;
+  bgRange.onchange = saveMixSettings;
+  narrRange.onchange = saveMixSettings;
+  attenRange.onchange = saveMixSettings;
+
+  const actions = el('div', undefined, 'mix-actions');
+  const previewBtn = el('button', '🎧 Nghe thử mix (15s)', 'secondary');
+  const remixBtn = el('button', '🎛️ Phối lại âm thanh (Remix)');
+  const playerBox = el('div', undefined, 'mix-preview-player');
+  playerBox.hidden = true;
+  const audioEl = el('audio');
+  audioEl.controls = true;
+  playerBox.append(audioEl);
+
+  previewBtn.onclick = async () => {
+    previewBtn.disabled = true;
+    previewBtn.textContent = 'Đang xử lý nghe thử...';
+    try {
+      await saveMixSettings();
+      let startSec = 10;
+      if(p.segments && p.segments.length > 0){
+        startSec = Math.max(0, p.segments[0].start - 1);
+      }
+      const r = await fetch(`/api/projects/${p.id}/mix/preview?start=${startSec}&duration=15`);
+      if(!r.ok){
+        const err = await r.json().catch(()=>({detail: 'Không thể tạo nghe thử mix'}));
+        throw Error(err.detail);
+      }
+      const blob = await r.blob();
+      audioEl.src = URL.createObjectURL(blob);
+      playerBox.hidden = false;
+      await audioEl.play();
+    } catch(err) {
+      toast(err.message);
+    } finally {
+      previewBtn.disabled = false;
+      previewBtn.textContent = '🎧 Nghe thử mix (15s)';
+    }
+  };
+
+  remixBtn.onclick = async () => {
+    remixBtn.disabled = true;
+    try {
+      await saveMixSettings();
+      await api(`/projects/${p.id}/remix`, {method: 'POST'});
+      toast('Đã bắt đầu phối lại âm thanh nền!');
+      await refresh(true);
+    } catch(err) {
+      toast('Lỗi remix: ' + err.message);
+    } finally {
+      remixBtn.disabled = false;
+    }
+  };
+
+  actions.append(previewBtn, remixBtn);
+  card.append(actions, playerBox);
   return card;
 }
 async function deleteProject(p){
@@ -387,7 +550,9 @@ function render(){
   const w=$('#workspace');w.replaceChildren(); const p=current;
   const heading=el('div',undefined,'heading');
   const hLeft=el('div',undefined,'heading-left');
-  hLeft.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'));
+  const langLabels = {ko: '🇰🇷 Tiếng Hàn', en: '🇺🇸 Tiếng Anh', ja: '🇯🇵 Tiếng Nhật'};
+  const langPill = el('span', langLabels[p.source_language] || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
+  hLeft.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'), langPill);
   heading.append(hLeft);
 
   const hActions=el('div',undefined,'heading-actions');
@@ -450,6 +615,7 @@ function render(){
   if(['running','queued'].includes(p.state)){const b=el('button','Hủy xử lý','secondary');b.onclick=()=>act('cancel');tools.append(b);}
   if(['failed','cancelled'].includes(p.state)){const b=el('button','Thử lại bước hiện tại','secondary');b.onclick=()=>act('resume');tools.append(b);}
   w.append(tools);
+  w.append(renderMixCard(p));
   if(p.segments.length){
     w.append(el('p','Nhấn mốc thời gian để nghe lời gốc. Bấm "Nghe thử" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.','hint'));
 
@@ -572,6 +738,8 @@ $('#upload').onclick=()=>{
   form.append('pause_review',pauseEl&&pauseEl.checked?'1':'0');
   const autoFitEl=$('#uploadAutoFit');
   form.append('auto_fit',autoFitEl&&autoFitEl.checked?'1':'0');
+  const langEl=$('#uploadSourceLang');
+  if(langEl&&langEl.value)form.append('source_language',langEl.value);
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');
   $('#upload').disabled=true;$('#uploadProgress').hidden=false;
   xhr.upload.onprogress=e=>{if(e.lengthComputable)$('#uploadProgress').value=e.loaded/e.total*100;};
@@ -732,6 +900,131 @@ function initUsageModal(){
   modal.onclick = (e) => { if(e.target === modal) hide(); };
 }
 
+async function loadVoiceLibrary(){
+  const listEl = $('#voiceList');
+  if(!listEl) return;
+  listEl.innerHTML = '<div class="usage-loading">Đang tải danh sách giọng...</div>';
+  try {
+    const voices = await api('/voices');
+    await fetchVoicesAll();
+    const uv = $('#uploadVoice');
+    if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
+    listEl.replaceChildren();
+    if(!voices.length){
+      listEl.innerHTML = '<p class="hint-text" style="text-align:center;padding:20px">Chưa có giọng clone nào. Hãy tải lên file audio mẫu (3–8 giây) ở trên để tạo giọng đầu tiên!</p>';
+      return;
+    }
+    for(const v of voices){
+      const item = el('div', undefined, 'voice-item');
+      const info = el('div', undefined, 'voice-info');
+      const nameEl = el('div', undefined, 'voice-name');
+      nameEl.append(el('span', '🎙️ ' + v.name));
+      const metaEl = el('div', `Độ dài mẫu: ${v.duration}s · Cập nhật: ${new Date(v.created * 1000).toLocaleDateString()}`, 'voice-meta');
+      info.append(nameEl, metaEl);
+
+      const actions = el('div', undefined, 'voice-actions');
+      const sampleBtn = el('button', '▶ Nghe mẫu', 'voice-btn-sm secondary');
+      sampleBtn.onclick = () => {
+        stopPreview();
+        const a = new Audio(`/api/voices/${v.id}/sample`);
+        a.play();
+      };
+      actions.append(sampleBtn);
+
+      if(v.has_preview){
+        const prevBtn = el('button', '🎧 Nghe thử câu', 'voice-btn-sm secondary');
+        prevBtn.onclick = () => {
+          stopPreview();
+          const a = new Audio(`/api/voices/${v.id}/preview?t=${Date.now()}`);
+          a.play();
+        };
+        actions.append(prevBtn);
+      }
+
+      const genPrevBtn = el('button', '⚡ Tạo câu thử', 'voice-btn-sm secondary');
+      genPrevBtn.onclick = async () => {
+        genPrevBtn.disabled = true;
+        genPrevBtn.textContent = 'Đang gửi...';
+        try {
+          await api(`/voices/${v.id}/preview`, {method: 'POST'});
+          toast(`Đã đưa yêu cầu tạo câu nghe thử cho giọng "${v.name}" vào hàng đợi GPU.`);
+          await refresh(true);
+        } catch(err) {
+          toast(err.message);
+        } finally {
+          genPrevBtn.disabled = false;
+          genPrevBtn.textContent = '⚡ Tạo câu thử';
+        }
+      };
+      actions.append(genPrevBtn);
+
+      const delBtn = el('button', '🗑️', 'voice-btn-sm btn-danger');
+      delBtn.title = 'Xóa giọng clone này';
+      delBtn.onclick = async () => {
+        if(!confirm(`Bạn có chắc muốn xóa giọng "${v.name}"?`)) return;
+        try {
+          await api(`/voices/${v.id}`, {method: 'DELETE'});
+          toast(`Đã xóa giọng "${v.name}".`);
+          await loadVoiceLibrary();
+          await refresh(true);
+        } catch(err) {
+          toast('Không thể xóa: ' + err.message);
+        }
+      };
+      actions.append(delBtn);
+
+      item.append(info, actions);
+      listEl.append(item);
+    }
+  } catch(err) {
+    listEl.innerHTML = `<div class="error">Lỗi tải danh sách: ${err.message}</div>`;
+  }
+}
+
+function initVoiceModal(){
+  const btn = $('#voiceLibBtn');
+  const modal = $('#voiceModal');
+  const closeBtn = $('#voiceModalCloseBtn');
+  const closeFooterBtn = $('#voiceModalFooterCloseBtn');
+  const submitBtn = $('#voiceSubmitBtn');
+  if(!btn || !modal) return;
+
+  btn.onclick = () => { modal.hidden = false; loadVoiceLibrary(); };
+  const hide = () => { modal.hidden = true; };
+  if(closeBtn) closeBtn.onclick = hide;
+  if(closeFooterBtn) closeFooterBtn.onclick = hide;
+  modal.onclick = (e) => { if(e.target === modal) hide(); };
+
+  if(submitBtn){
+    submitBtn.onclick = async () => {
+      const name = $('#voiceNameInput').value.trim();
+      const file = $('#voiceFileInput').files[0];
+      if(!name){ toast('Vui lòng nhập tên cho giọng clone.'); return; }
+      if(!file){ toast('Vui lòng chọn file âm thanh mẫu (3–8 giây).'); return; }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Đang xử lý & chuẩn hóa...';
+      try {
+        const form = new FormData();
+        form.append('name', name);
+        form.append('file', file);
+        const res = await api('/voices', {method: 'POST', body: form});
+        toast(`Đã tạo thành công giọng clone: "${res.name}" (${res.duration}s)!`);
+        $('#voiceNameInput').value = '';
+        $('#voiceFileInput').value = '';
+        await loadVoiceLibrary();
+        await refresh(true);
+      } catch(err) {
+        toast('Lỗi tạo giọng: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Tạo giọng clone';
+      }
+    };
+  }
+}
+
 initUploadForm();
 initUsageModal();
+initVoiceModal();
 refresh();setInterval(()=>refresh(),3000);

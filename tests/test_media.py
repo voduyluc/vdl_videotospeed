@@ -58,3 +58,20 @@ class ExportTests(unittest.TestCase):
         self.assertTrue((p / 'narration.mp3').exists())
         with wave.open(str(p / 'narration.wav'), 'rb') as audio:
             self.assertAlmostEqual(audio.getnframes() / audio.getframerate(), 5, places=2)
+
+    def test_mix_creates_mixed_audio_files(self):
+        from app.media import mix
+        pid, p = self.prepare(1)
+        export(pid)
+        bg_file = p / 'background.wav'
+        with wave.open(str(bg_file), 'wb') as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(48000)
+            out.writeframes(b'\x02\x00\x02\x00' * (48000 * 5))
+        mix(pid)
+        self.assertTrue((p / 'mixed.wav').exists())
+        self.assertTrue((p / 'mixed.mp3').exists())
+        with wave.open(str(p / 'mixed.wav'), 'rb') as audio:
+            self.assertEqual(audio.getnchannels(), 2)
+            self.assertAlmostEqual(audio.getnframes() / audio.getframerate(), 5, places=2)

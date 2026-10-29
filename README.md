@@ -1,8 +1,13 @@
 # Viet Voice Studio
 
-Web app cá nhân tạo audio thuyết minh tiếng Việt từ video tiếng Hàn, chạy model local trên **Ubuntu 24.04.4 LTS x86_64 / NVIDIA RTX 5060 8 GB**.
+Web app cá nhân tạo audio thuyết minh tiếng Việt từ video tiếng **Hàn (`ko`)**, **Anh (`en`)**, hoặc **Nhật (`ja`)**, chạy model local trên **Ubuntu 24.04.4 LTS x86_64 / NVIDIA RTX 5060 8 GB**.
 
-Pipeline: FFmpeg → faster-whisper large-v3 INT8 → Qwen3-8B Q4_K_M → duyệt bản dịch → VieNeu-TTS v3 Turbo → căn timeline → WAV/MP3/SRT.
+Pipeline: FFmpeg (tách STT & background stereo) → faster-whisper large-v3 INT8 → Qwen3-8B Q4_K_M dịch sang tiếng Việt → duyệt bản dịch → VieNeu-TTS v3 Turbo (giọng preset hoặc giọng clone) → căn timeline → xuất WAV/MP3 thuyết minh → phối âm nền (sidechain ducking) → xuất bản mixed WAV/MP3.
+
+### Tính năng mới nổi bật:
+- 🌐 **Hỗ trợ đa ngôn ngữ video nguồn**: Hàn (`ko` - mặc định), Anh (`en`), Nhật (`ja`). Đầu ra luôn là thuyết minh tiếng Việt chuẩn xác theo ngữ cảnh.
+- 🎙️ **Thư viện Voice Cloning cá nhân**: Tải lên mẫu giọng ngắn (khuyến nghị 3–8 giây sạch, 1 người nói), tạo câu nghe thử và chọn giọng clone đọc thuyết minh cho toàn bộ video. Tích hợp trực tiếp qua VieNeu-TTS local.
+- 🎚️ **Giữ âm thanh gốc làm nền & Sidechain Ducking**: Giữ toàn bộ âm thanh nền gốc stereo (nhạc, hiệu ứng, môi trường), tự động hạ âm lượng nền mượt mà khi giọng thuyết minh phát lên và nâng nền khi thuyết minh ngừng. Cho phép tùy chỉnh âm lượng nền/thuyết minh, độ nén ducking, nghe thử 15s và phối âm lại (Remix) tức thì không cần chạy lại STT/Dịch/TTS.
 
 ## Cài đặt trên server
 
@@ -55,11 +60,18 @@ Uninstall không gỡ CUDA, driver hoặc apt package dùng chung; không xóa v
 
 ## Cách sử dụng
 
-1. Upload video. MVP lấy **track audio đầu tiên**; STT cố định tiếng Hàn.
-2. Theo dõi hàng đợi; STT và dịch tự chạy.
-3. Ở trạng thái **Chờ duyệt**, sửa bản dịch. Nhấn timestamp để nghe lại đoạn gốc. Phụ đề SRT có thể tải ngay trước TTS.
-4. Chọn tên giọng preset VieNeu hợp lệ, ví dụ `Hải Đăng`, bấm **Lưu & tạo audio**.
-5. Tải WAV/MP3 và SRT. Nếu câu quá dài, hệ thống báo lỗi và đánh dấu viền cam; rút gọn câu rồi tạo lại. Những câu không thay đổi dùng lại cache TTS.
+1. **Upload video & chọn ngôn ngữ nguồn**: Chọn file video và chọn ngôn ngữ nguồn (**Hàn**, **Anh**, hoặc **Nhật**). Mặc định là tiếng Hàn.
+2. **Theo dõi hàng đợi**: Pipeline tự động tách audio STT 16kHz mono và audio nền gốc 48kHz stereo, sau đó chạy STT bằng faster-whisper và dịch bằng LLM Qwen3-8B.
+3. **Quản lý Giọng Clone**: Nhấp nút **🎙️ Giọng Clone** ở thanh trên cùng để upload mẫu giọng ngắn (3-8s WAV/MP3), tạo câu nghe thử và lưu vào thư viện.
+4. **Ở trạng thái Chờ duyệt**:
+   - Sửa bản dịch, nhấn timestamp để nghe lại audio gốc.
+   - Chọn giọng thuyết minh: Có thể chọn giọng mẫu preset VieNeu hoặc bất kỳ giọng clone nào đã tạo.
+   - Nhấn **Lưu & tạo audio** để tiến hành tổng hợp giọng nói.
+5. **Căn timeline & Phối âm nền (Ducking)**:
+   - Hệ thống tự động căn chỉnh khoảng lặng và xuất `narration.wav/mp3` cùng phụ đề nguồn (`ko.srt`/`en.srt`/`ja.srt`) và `vi.srt`.
+   - Tiến hành bước **Phối âm nền** tự động áp dụng sidechain ducking để tạo `mixed.wav/mp3`.
+   - Có thể tinh chỉnh âm lượng nền, âm lượng thuyết minh, độ nén ducking, nghe thử 15 giây preview và bấm **Phối âm lại** ngay lập tức mà không cần chạy lại các bước trước.
+6. **Tải file kết quả**: Tải bản thuyết minh thuần (`narration.wav/mp3`) hoặc bản phối hoàn chỉnh (`mixed.wav/mp3`), kèm theo phụ đề song ngữ.
 
 Nút **Nghe thử** bên cạnh mỗi câu phát audio TTS đã tạo cho câu đó; bấm **Dừng** để ngắt. Nếu chưa có audio hoặc bản dịch/giọng đã thay đổi, cần tạo lại trước khi nghe. Chỉ phát một đoạn nghe thử tại một thời điểm.
 

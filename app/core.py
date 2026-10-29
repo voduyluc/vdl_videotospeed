@@ -35,12 +35,32 @@ def init_db():
             step TEXT NOT NULL, progress TEXT NOT NULL DEFAULT '',
             error TEXT, duration REAL DEFAULT 0, created REAL NOT NULL,
             voice TEXT NOT NULL, cancel INTEGER DEFAULT 0,
-            pause_review INTEGER DEFAULT 1, auto_fit INTEGER DEFAULT 1)''')
+            pause_review INTEGER DEFAULT 1, auto_fit INTEGER DEFAULT 1,
+            source_language TEXT DEFAULT 'ko',
+            mix_background_gain REAL DEFAULT 0.25,
+            mix_narration_gain REAL DEFAULT 1.0,
+            mix_ducking INTEGER DEFAULT 1,
+            mix_ducking_attenuation REAL DEFAULT 16.0)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
         if 'auto_fit' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN auto_fit INTEGER DEFAULT 1')
+        if 'source_language' not in cols:
+            c.execute("ALTER TABLE projects ADD COLUMN source_language TEXT DEFAULT 'ko'")
+        if 'mix_background_gain' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN mix_background_gain REAL DEFAULT 0.25')
+        if 'mix_narration_gain' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN mix_narration_gain REAL DEFAULT 1.0')
+        if 'mix_ducking' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN mix_ducking INTEGER DEFAULT 1')
+        if 'mix_ducking_attenuation' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN mix_ducking_attenuation REAL DEFAULT 16.0')
+        c.execute('''CREATE TABLE IF NOT EXISTS voices (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL NOT NULL,
+            sample_file TEXT NOT NULL, version TEXT NOT NULL,
+            duration REAL NOT NULL, preview_path TEXT)''')
+        (DATA / 'voices').mkdir(exist_ok=True)
         c.execute("UPDATE projects SET state='queued' WHERE state='running'")
 
 
@@ -97,8 +117,25 @@ def wav_duration(path):
         return info.frames / info.samplerate
 
 
-def tts_key(text, voice):
-    return hashlib.sha256((text.strip() + '\0' + voice + '\0vieneu-3.8.3-v3turbo').encode()).hexdigest()
+def get_voice_version(voice):
+    try:
+        with db() as c:
+            row = c.execute('SELECT version FROM voices WHERE id=?', (voice,)).fetchone()
+        if row and row['version']:
+            return row['version']
+    except Exception:
+        pass
+    return 'preset'
+
+
+def tts_key(text, voice, version=None):
+    if version is None:
+        version = get_voice_version(voice)
+    if version == 'preset':
+        payload = text.strip() + '\0' + voice + '\0vieneu-3.8.3-v3turbo'
+    else:
+        payload = text.strip() + '\0' + voice + '\0' + str(version) + '\0vieneu-3.8.3-v3turbo'
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
 def python_for(stage):

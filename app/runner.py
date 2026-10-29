@@ -1,11 +1,13 @@
 """One supervised runner owns the GPU; SQLite preserves the queue across restarts."""
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-from app.core import ROOT, db, folder, init_db, python_for, update
+from app.core import DATA, ROOT, db, folder, init_db, python_for, read_json, update
 
 stopping = False
 child = None
@@ -111,7 +113,7 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     init_db()
-    steps = ['extract', 'stt', 'translate', 'tts', 'export']
+    steps = ['extract', 'stt', 'translate', 'tts', 'export', 'mix']
     while not stopping:
         with db() as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM projects WHERE state='queued' ORDER BY created")]
@@ -141,10 +143,22 @@ def main():
                     update(pid, state='review', step='tts', progress='Chờ duyệt bản dịch')
                 else:
                     update(pid, state='queued', step='tts', progress='Tự động tiếp tục TTS')
-            elif step == 'export':
+            elif step == 'tts' and row.get('name', '').startswith('Voice Preview:'):
+                manifest = read_json(folder(pid) / 'tts-manifest.json', [])
+                if manifest:
+                    preview_wav = Path(manifest[0]['file'])
+                    dest = DATA / 'voices' / row['voice'] / 'preview.wav'
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if preview_wav.exists():
+                        shutil.copyfile(preview_wav, dest)
+                        with db() as c:
+                            c.execute('UPDATE voices SET preview_path=? WHERE id=?', (str(dest), row['voice']))
+                update(pid, state='completed', progress='Đã tạo xong câu nghe thử')
+            elif step == 'mix':
                 update(pid, state='completed', progress='Hoàn tất')
             else:
-                update(pid, state='queued', step=steps[steps.index(step)+1])
+                next_step = steps[steps.index(step)+1]
+                update(pid, state='queued', step=next_step)
 
 
 if __name__ == '__main__':
