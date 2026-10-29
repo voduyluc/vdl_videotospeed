@@ -197,6 +197,7 @@ class ApiTests(unittest.TestCase):
         proj = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(proj['state'], 'ready')
         self.assertEqual(proj['step'], 'extract')
+        self.assertIsNone(proj.get('started_at'))
 
         # User can modify settings before starting
         r_settings = self.client.patch(f'/api/projects/{pid}/settings', json={'multi_speaker': 1, 'source_language': 'en'})
@@ -210,6 +211,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r_start.status_code, 200)
         proj_started = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(proj_started['state'], 'queued')
+        self.assertIsNotNone(proj_started.get('started_at'))
+        self.assertIsInstance(proj_started['started_at'], (int, float))
 
     def test_empty_translation_cannot_generate(self):
         pid = self.create()

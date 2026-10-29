@@ -68,6 +68,10 @@ def init_db():
             c.execute('ALTER TABLE projects ADD COLUMN mix_ducking INTEGER DEFAULT 1')
         if 'mix_ducking_attenuation' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN mix_ducking_attenuation REAL DEFAULT 16.0')
+        if 'started_at' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN started_at REAL')
+        if 'completed_at' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN completed_at REAL')
         c.execute('''CREATE TABLE IF NOT EXISTS voices (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL NOT NULL,
             sample_file TEXT NOT NULL, version TEXT NOT NULL,

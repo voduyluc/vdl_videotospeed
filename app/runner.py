@@ -159,14 +159,14 @@ def main():
                         shutil.copyfile(preview_wav, dest)
                         with db() as c:
                             c.execute('UPDATE voices SET preview_path=? WHERE id=?', (str(dest), row['voice']))
-                update(pid, state='completed', progress='Đã tạo xong câu nghe thử')
+                update(pid, state='completed', completed_at=time.time(), progress='Đã tạo xong câu nghe thử')
             elif step == 'mix':
-                update(pid, state='completed', progress='Hoàn tất')
+                update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
             elif step in pipeline_steps and pipeline_steps.index(step) + 1 < len(pipeline_steps):
                 next_step = pipeline_steps[pipeline_steps.index(step) + 1]
                 update(pid, state='queued', step=next_step)
             else:
-                update(pid, state='completed', progress='Hoàn tất')
+                update(pid, state='completed', completed_at=time.time(), progress='Hoàn tất')
 
 
 if __name__ == '__main__':

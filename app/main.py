@@ -147,13 +147,14 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
         if not size:
             raise HTTPException(400, 'Empty file')
         with db() as c:
+            now_ts = time.time()
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
                         source_language,fit_duration,multi_speaker,voice_male,voice_female,
-                        mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                      (pid, Path(file.filename or 'Video').name, 'queued', 'extract', time.time(),
+                        mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                      (pid, Path(file.filename or 'Video').name, 'queued', 'extract', now_ts,
                        selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
-                       multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten))
+                       multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -317,12 +318,12 @@ def action(pid: str, action: str):
                     item.unlink()
                 except Exception:
                     pass
-        update(pid, state='ready', step='extract', cancel=0, error=None, progress='Đã đưa về ban đầu (Chờ cấu hình & bắt đầu)')
+        update(pid, state='ready', step='extract', cancel=0, error=None, started_at=None, completed_at=None, progress='Đã đưa về ban đầu (Chờ cấu hình & bắt đầu)')
         return {'ok': True}
     if action == 'remix':
         if not (folder(pid) / 'narration.wav').exists():
             raise HTTPException(409, 'Cần tạo audio thuyết minh trước khi phối âm')
-        update(pid, state='queued', step='mix', cancel=0, error=None, progress='Đang chờ phối âm')
+        update(pid, state='queued', step='mix', cancel=0, error=None, completed_at=None, progress='Đang chờ phối âm')
         return {'ok': True}
     if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled'):
         raise HTTPException(409, 'Action unavailable')
@@ -330,7 +331,8 @@ def action(pid: str, action: str):
         segments = read_json(folder(pid) / 'segments.json', [])
         if not segments or any(not s.get('translation', '').strip() for s in segments):
             raise HTTPException(400, 'Every segment needs a translation')
-    update(pid, state='queued', cancel=0, error=None,
+    update(pid, state='queued', cancel=0, error=None, completed_at=None,
+           started_at=time.time() if action == 'start' or not row.get('started_at') else row.get('started_at'),
            step='tts' if action == 'generate' else row['step'],
            progress='Đang chờ xử lý...' if action in ('start', 'resume') else 'Đang chờ tạo thuyết minh')
     return {'ok': True}
