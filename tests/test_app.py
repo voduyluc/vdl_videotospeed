@@ -160,6 +160,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r_mp3.status_code, 200)
         self.assertIn('movie_thuyet_minh.mp3', r_mp3.headers.get('content-disposition', ''))
 
+    def test_usage_stats_endpoint(self):
+        r = self.client.get('/api/usage')
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn('cpu', data)
+        self.assertIn('ram', data)
+        self.assertIn('gpu', data)
+        self.assertIn('disk', data)
+        self.assertIn('breakdown', data['disk'])
+        self.assertIn('video_and_data_bytes', data['disk']['breakdown'])
+        self.assertIn('models_bytes', data['disk']['breakdown'])
+        self.assertIn('app_and_env_bytes', data['disk']['breakdown'])
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

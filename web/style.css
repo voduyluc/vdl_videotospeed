@@ -80,3 +80,41 @@
 .btn-danger{background:#2d1714;color:#ff8a73;border:1px solid #ff806644}
 .btn-danger:hover{background:#45201a;color:#ffb2a3;border-color:#ff8066}
 .heading-actions{display:flex;gap:10px;align-items:center}
+
+/* Header Right & Usage Button */
+.header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.usage-btn{background:#1a251b;color:var(--accent);border:1px solid #5a9e3d66;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:all .2s ease}
+.usage-btn:hover{background:var(--accent);color:#17210e;border-color:var(--accent);box-shadow:0 0 12px rgba(184,231,134,.3)}
+
+/* Modal Dialog */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:999;padding:16px}
+.modal-backdrop[hidden]{display:none}
+.modal-dialog{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.6);overflow:hidden}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line);background:#12171e}
+.modal-header h3{margin:0;font-size:16px;color:var(--text);display:flex;align-items:center;gap:8px}
+.modal-header-actions{display:flex;gap:6px;align-items:center}
+.btn-icon{background:transparent;color:var(--muted);border:0;padding:6px 10px;border-radius:6px;font-size:15px;cursor:pointer;transition:all .2s}
+.btn-icon:hover{background:#2a3644;color:var(--text)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--line);background:#12171e}
+
+/* Usage Grid */
+.usage-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.usage-grid{grid-template-columns:1fr}}
+.usage-card{background:#11171e;border:1px solid var(--line);border-radius:10px;padding:14px}
+.usage-card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.usage-card-title span.val-highlight{color:var(--accent);font-size:13px;text-transform:none}
+.usage-stat-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:6px 0}
+.usage-stat-row .label{color:var(--muted)}
+.usage-stat-row .val{font-weight:600;color:var(--text)}
+.usage-progress-bar{height:6px;background:#1b2430;border-radius:3px;overflow:hidden;margin:8px 0 12px}
+.usage-progress-fill{height:100%;background:linear-gradient(90deg,#5a9e3d,var(--accent));width:0%;transition:width .3s}
+.usage-progress-fill.warn{background:linear-gradient(90deg,#e5a93b,#ff9800)}
+.usage-progress-fill.danger{background:linear-gradient(90deg,#e54d3b,#f44336)}
+
+/* Disk Breakdown list */
+.breakdown-list{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.breakdown-item{display:flex;justify-content:space-between;font-size:12px;margin:5px 0}
+.breakdown-item .item-name{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.breakdown-item .item-val{font-weight:600;color:var(--text)}
+.usage-loading{text-align:center;padding:40px;color:var(--muted);font-size:14px}

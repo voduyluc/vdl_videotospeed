@@ -260,6 +260,12 @@ def segment_audio(pid: str, sid: str):
     return FileResponse(path, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
 
 
+@app.get('/api/usage')
+def usage_stats():
+    from app.system_info import get_usage
+    return get_usage()
+
+
 @app.get('/')
 def index():
     return FileResponse(ROOT / 'web/index.html')

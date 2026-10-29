@@ -598,5 +598,140 @@ $('#upload').onclick=()=>{
   xhr.send(form);
 };
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+
+function makeProgressBar(pct){
+  const bar = el('div', undefined, 'usage-progress-bar');
+  const fill = el('div', undefined, 'usage-progress-fill');
+  fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  if(pct >= 90) fill.classList.add('danger');
+  else if(pct >= 75) fill.classList.add('warn');
+  bar.append(fill);
+  return bar;
+}
+
+function formatBytes(bytes){
+  if(bytes >= 1024**3) return (bytes / 1024**3).toFixed(2) + ' GB';
+  if(bytes >= 1024**2) return (bytes / 1024**2).toFixed(1) + ' MB';
+  if(bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return bytes + ' B';
+}
+
+async function loadUsage(){
+  const content = $('#usageContent');
+  const timeEl = $('#usageTime');
+  content.innerHTML = '<div class="usage-loading">Đang tải thông số hệ thống...</div>';
+  try {
+    const data = await api('/usage');
+    content.replaceChildren();
+
+    const grid = el('div', undefined, 'usage-grid');
+
+    // 1. GPU & VRAM Card
+    const gpuCard = el('div', undefined, 'usage-card');
+    const gpuTitle = el('div', undefined, 'usage-card-title');
+    gpuTitle.append(el('span', '🎮 GPU & VRAM'));
+    if(data.gpu && data.gpu.available){
+      gpuTitle.append(el('span', `${data.gpu.vram_usage_pct}% VRAM`, 'val-highlight'));
+    }
+    gpuCard.append(gpuTitle);
+
+    if(data.gpu && data.gpu.available){
+      const rowName = el('div', undefined, 'usage-stat-row');
+      rowName.append(el('span', 'Model:', 'label'), el('span', data.gpu.name, 'val'));
+      gpuCard.append(rowName);
+
+      const usedGb = (data.gpu.vram_used_mb / 1024).toFixed(1);
+      const totGb = (data.gpu.vram_total_mb / 1024).toFixed(1);
+      const rowVram = el('div', undefined, 'usage-stat-row');
+      rowVram.append(el('span', 'VRAM đã dùng:', 'label'), el('span', `${usedGb} GB / ${totGb} GB`, 'val'));
+      gpuCard.append(rowVram, makeProgressBar(data.gpu.vram_usage_pct));
+
+      const rowUtil = el('div', undefined, 'usage-stat-row');
+      rowUtil.append(el('span', 'Mức tải GPU Core:', 'label'), el('span', `${data.gpu.gpu_util_pct}%`, 'val'));
+      gpuCard.append(rowUtil, makeProgressBar(data.gpu.gpu_util_pct));
+    } else {
+      const rowMsg = el('div', undefined, 'usage-stat-row');
+      rowMsg.append(el('span', data.gpu ? data.gpu.name : 'Không có GPU NVIDIA', 'hint'));
+      gpuCard.append(rowMsg);
+    }
+    grid.append(gpuCard);
+
+    // 2. CPU & RAM Card
+    const cpuCard = el('div', undefined, 'usage-card');
+    const cpuTitle = el('div', undefined, 'usage-card-title');
+    cpuTitle.append(el('span', '⚡ CPU & RAM'));
+    cpuTitle.append(el('span', `${data.cpu.usage_pct}% CPU`, 'val-highlight'));
+    cpuCard.append(cpuTitle);
+
+    const rowCpu = el('div', undefined, 'usage-stat-row');
+    rowCpu.append(el('span', `CPU (${data.cpu.cores} cores):`, 'label'), el('span', `${data.cpu.usage_pct}%`, 'val'));
+    cpuCard.append(rowCpu, makeProgressBar(data.cpu.usage_pct));
+
+    const rowRam = el('div', undefined, 'usage-stat-row');
+    rowRam.append(el('span', 'RAM (Hệ thống):', 'label'), el('span', `${data.ram.used_gb} GB / ${data.ram.total_gb} GB (${data.ram.usage_pct}%)`, 'val'));
+    cpuCard.append(rowRam, makeProgressBar(data.ram.usage_pct));
+
+    grid.append(cpuCard);
+
+    // 3. Disk Partition Card
+    const diskCard = el('div', undefined, 'usage-card');
+    const diskTitle = el('div', undefined, 'usage-card-title');
+    diskTitle.append(el('span', '💾 Ổ Đĩa Tổng (Partition)'));
+    diskTitle.append(el('span', `${data.disk.usage_pct}% đầy`, 'val-highlight'));
+    diskCard.append(diskTitle);
+
+    const rowDisk = el('div', undefined, 'usage-stat-row');
+    rowDisk.append(el('span', 'Đã dùng / Tổng:', 'label'), el('span', `${data.disk.used_gb} GB / ${data.disk.total_gb} GB`, 'val'));
+    const rowFree = el('div', undefined, 'usage-stat-row');
+    rowFree.append(el('span', 'Còn trống:', 'label'), el('span', `${data.disk.free_gb} GB`, 'val'));
+    diskCard.append(rowDisk, makeProgressBar(data.disk.usage_pct), rowFree);
+    grid.append(diskCard);
+
+    // 4. Breakdown Card
+    const breakCard = el('div', undefined, 'usage-card');
+    const breakTitle = el('div', undefined, 'usage-card-title');
+    breakTitle.append(el('span', '📁 Chi Tiết Ứng Dụng & Model'));
+    breakCard.append(breakTitle);
+
+    const bd = data.disk.breakdown || {};
+    const bList = el('div', undefined, 'breakdown-list');
+    
+    const b1 = el('div', undefined, 'breakdown-item');
+    b1.append(el('span', '🎬 Video & File Dự án (data/):', 'item-name'), el('span', formatBytes(bd.video_and_data_bytes || 0), 'item-val'));
+    
+    const b2 = el('div', undefined, 'breakdown-item');
+    b2.append(el('span', '🧠 AI Models (GGUF, Whisper, TTS):', 'item-name'), el('span', formatBytes(bd.models_bytes || 0), 'item-val'));
+    
+    const b3 = el('div', undefined, 'breakdown-item');
+    b3.append(el('span', '📦 App & Môi trường (.venv):', 'item-name'), el('span', formatBytes(bd.app_and_env_bytes || 0), 'item-val'));
+    
+    bList.append(b1, b2, b3);
+    breakCard.append(bList);
+    grid.append(breakCard);
+
+    content.append(grid);
+    if(timeEl) timeEl.textContent = `Cập nhật lúc: ${new Date().toLocaleTimeString()}`;
+  } catch(err) {
+    content.innerHTML = `<div class="error">Lỗi khi tải thông số: ${err.message}</div>`;
+  }
+}
+
+function initUsageModal(){
+  const btn = $('#usageBtn');
+  const modal = $('#usageModal');
+  const closeBtn = $('#usageCloseBtn');
+  const closeFooterBtn = $('#usageCloseFooterBtn');
+  const refreshBtn = $('#usageRefreshBtn');
+  if(!btn || !modal) return;
+
+  btn.onclick = () => { modal.hidden = false; loadUsage(); };
+  const hide = () => { modal.hidden = true; };
+  if(closeBtn) closeBtn.onclick = hide;
+  if(closeFooterBtn) closeFooterBtn.onclick = hide;
+  if(refreshBtn) refreshBtn.onclick = () => loadUsage();
+  modal.onclick = (e) => { if(e.target === modal) hide(); };
+}
+
 initUploadForm();
+initUsageModal();
 refresh();setInterval(()=>refresh(),3000);
