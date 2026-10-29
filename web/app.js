@@ -292,11 +292,79 @@ function renderPipeline(p){
   card.append(stepsEl,barWrapper);
   return card;
 }
+function renderDownloadSection(p){
+  const hasExports = Array.isArray(p.exports) && p.exports.length > 0;
+  if(!hasExports){
+    if(p.state === 'failed'){
+      const warnBox = el('div', undefined, 'download-alert-failed');
+      const msg = el('div', undefined, 'alert-msg');
+      msg.innerHTML = `<strong>⚠️ Chưa tạo được file Audio:</strong> Tiến trình đã dừng trước khi hoàn tất xuất file (có thể do lỗi thời lượng hoặc âm thanh). Hãy bật <b>"Tự nén âm thanh vừa thời gian"</b> ở dưới rồi bấm <b>"Thử lại bước hiện tại"</b> để tạo file.`;
+      const retryBtn = el('button', '🔄 Thử lại bước hiện tại', 'btn-retry');
+      retryBtn.onclick = () => act('resume');
+      warnBox.append(msg, retryBtn);
+      return warnBox;
+    }
+    return null;
+  }
+
+  const card = el('div', undefined, 'download-card');
+  const header = el('div', undefined, 'download-header');
+  header.append(el('h3', '🎉 Tải Về Kết Quả (Audio & Phụ Đề)'));
+  if(p.state === 'completed'){
+    header.append(el('span', 'Hoàn tất 100%', 'badge-completed'));
+  }
+  card.append(header);
+
+  if(p.exports.includes('narration.mp3') || p.exports.includes('narration.wav')){
+    const playerBox = el('div', undefined, 'audio-player-box');
+    const playerLabel = el('div', 'Nghe thử bản thuyết minh đã ghép:', 'audio-player-label');
+    const audio = el('audio');
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = `/api/projects/${p.id}/files/${p.exports.includes('narration.mp3') ? 'narration.mp3' : 'narration.wav'}`;
+    playerBox.append(playerLabel, audio);
+    card.append(playerBox);
+  }
+
+  const btnGroup = el('div', undefined, 'download-btn-group');
+  const meta = {
+    'narration.mp3': { label: '🎵 Tải Audio MP3 (Thuyết minh)', primary: true, desc: 'Định dạng phổ biến, dung lượng nhẹ' },
+    'narration.wav': { label: '🎙️ Tải Audio WAV (Lossless)', primary: false, desc: 'Âm thanh chất lượng gốc cao nhất' },
+    'vi.srt': { label: '📝 Phụ đề Tiếng Việt (.SRT)', primary: false, desc: 'Sub chuẩn khớp từng giây' },
+    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video' }
+  };
+
+  const order = ['narration.mp3', 'narration.wav', 'vi.srt', 'ko.srt'];
+  const sorted = [...p.exports].sort((a,b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  for(const name of sorted){
+    const info = meta[name] || { label: `⬇️ Tải ${name}`, primary: false, desc: '' };
+    const a = el('a', undefined, 'btn-download' + (info.primary ? ' primary' : ''));
+    a.href = `/api/projects/${p.id}/files/${name}`;
+    a.download = name;
+    
+    const iconLabel = el('span', info.label, 'btn-download-title');
+    a.append(iconLabel);
+    if(info.desc){
+      a.append(el('span', info.desc, 'btn-download-desc'));
+    }
+    btnGroup.append(a);
+  }
+
+  card.append(btnGroup);
+  return card;
+}
 function render(){
   stopPreview();
   const w=$('#workspace');w.replaceChildren(); const p=current;
   const heading=el('div',undefined,'heading');heading.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'));w.append(heading);
   w.append(renderPipeline(p));
+  const dlSec = renderDownloadSection(p);
+  if(dlSec) w.append(dlSec);
   w.append(el('p',`${p.progress} · ${p.segments.length} đoạn · ${time(p.duration)}`));
   const video=el('video');video.controls=true;video.preload='metadata';video.src=`/api/projects/${p.id}/files/source`;w.append(video);
   if(p.error)w.append(el('pre',p.error,'error'));
@@ -347,8 +415,6 @@ function render(){
   if(['running','queued'].includes(p.state)){const b=el('button','Hủy xử lý','secondary');b.onclick=()=>act('cancel');tools.append(b);}
   if(['failed','cancelled'].includes(p.state)){const b=el('button','Thử lại bước hiện tại','secondary');b.onclick=()=>act('resume');tools.append(b);}
   w.append(tools);
-  if(p.exports.includes('narration.mp3')){const audio=el('audio');audio.controls=true;audio.src=`/api/projects/${p.id}/files/narration.mp3`;w.append(audio);}
-  const downloads=el('div',undefined,'downloads');for(const name of p.exports){const a=el('a',name,'download');a.href=`/api/projects/${p.id}/files/${name}`;a.download=name;downloads.append(a);}w.append(downloads);
   if(p.segments.length){
     w.append(el('p','Nhấn mốc thời gian để nghe lời gốc. Bấm "Nghe thử" để nghe âm thanh tiếng Việt. Viền cam: câu vượt thời lượng cần rút gọn.','hint'));
 
