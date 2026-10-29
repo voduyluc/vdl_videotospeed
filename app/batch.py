@@ -19,7 +19,7 @@ def main(step, ids):
         for pid in ids:
             with db() as c:
                 row = c.execute('SELECT state,cancel FROM projects WHERE id=?', (pid,)).fetchone()
-            if row['state'] != 'queued' or row['cancel']:
+            if not row or row['state'] != 'queued' or row['cancel']:
                 continue
             update(pid, state='running', progress=step, error=None)
             try:

@@ -60,3 +60,23 @@
 .download-alert-failed .alert-msg b{color:#fff}
 .btn-retry{background:#ff8066;color:#2b1915;border:0;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap}
 .btn-retry:hover{filter:brightness(1.1)}
+
+/* Collapsible Upload Options */
+.upload-options{margin:10px 0 14px;background:#131920;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.upload-options summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);user-select:none;outline:none;display:flex;align-items:center;gap:6px}
+.upload-options summary:hover{color:var(--text)}
+.upload-options[open] summary{margin-bottom:10px;color:var(--accent)}
+.upload-options .options-body{border-top:1px solid var(--line);padding-top:10px}
+
+/* Project Row in Sidebar */
+.project-row{display:flex;align-items:stretch;margin:8px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;transition:border-color .2s}
+.project-row.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.project-row:hover{border-color:var(--muted)}
+.project-row.active:hover{border-color:var(--accent)}
+.project-select-btn{flex:1;min-width:0;text-align:left;background:transparent;color:var(--text);border:0;border-radius:0;padding:10px 12px;font:inherit;cursor:pointer;overflow-wrap:anywhere}
+.project-select-btn small{display:block;font-weight:400;color:var(--muted);margin-top:5px;font-size:12px}
+.project-del-btn{background:transparent;color:var(--muted);border:0;border-left:1px solid var(--line);border-radius:0;padding:0 12px;cursor:pointer;font-size:14px;transition:all .2s;display:flex;align-items:center;justify-content:center}
+.project-del-btn:hover{background:#3b1c18;color:#ff8066;border-color:#5c241c}
+.btn-danger{background:#2d1714;color:#ff8a73;border:1px solid #ff806644}
+.btn-danger:hover{background:#45201a;color:#ffb2a3;border-color:#ff8066}
+.heading-actions{display:flex;gap:10px;align-items:center}

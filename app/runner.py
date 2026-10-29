@@ -33,8 +33,8 @@ def execute(pid, step):
         interrupted = False
         while child.poll() is None:
             with db() as c:
-                cancelled = c.execute('SELECT cancel FROM projects WHERE id=?', (pid,)).fetchone()['cancel']
-            if cancelled or stopping:
+                r = c.execute('SELECT cancel FROM projects WHERE id=?', (pid,)).fetchone()
+            if not r or r['cancel'] or stopping:
                 interrupted = True
                 os.killpg(child.pid, signal.SIGTERM)
                 try:
@@ -46,6 +46,10 @@ def execute(pid, step):
             time.sleep(0.5)
         code = child.wait()
         child = None
+    with db() as c:
+        exists = c.execute('SELECT 1 FROM projects WHERE id=?', (pid,)).fetchone()
+    if not exists:
+        return False
     if interrupted or stopping:
         update(pid, state='queued' if stopping else 'cancelled')
         return False
@@ -66,9 +70,12 @@ def execute_batch(rows, step):
                                  stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         cancelled_ids = []
         while child.poll() is None:
+            cancelled_ids = []
             with db() as c:
-                cancelled_ids = [pid for pid in ids if c.execute(
-                    'SELECT cancel FROM projects WHERE id=?', (pid,)).fetchone()['cancel']]
+                for pid in ids:
+                    r = c.execute('SELECT cancel FROM projects WHERE id=?', (pid,)).fetchone()
+                    if not r or r['cancel']:
+                        cancelled_ids.append(pid)
             if stopping or cancelled_ids:
                 os.killpg(child.pid, signal.SIGTERM)
                 try:
@@ -83,7 +90,10 @@ def execute_batch(rows, step):
     # Completed jobs keep their committed state. Interrupted jobs resume from cache.
     for pid in ids:
         with db() as c:
-            row = dict(c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone())
+            r = c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
+        if not r:
+            continue
+        row = dict(r)
         if pid in cancelled_ids:
             update(pid, state='cancelled')
         elif row['state'] == 'running':

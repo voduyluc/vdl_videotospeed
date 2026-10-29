@@ -132,6 +132,34 @@ class ApiTests(unittest.TestCase):
         core.write_json(core.folder(pid) / 'segments.json', segments)
         self.assertEqual(self.client.post(f'/api/projects/{pid}/generate').status_code, 400)
 
+    def test_delete_project_cleans_db_and_folder(self):
+        pid = self.create()
+        p_dir = core.folder(pid)
+        self.assertTrue(p_dir.exists())
+        r = self.client.delete(f'/api/projects/{pid}')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(p_dir.exists())
+        self.assertEqual(self.client.get(f'/api/projects/{pid}').status_code, 404)
+
+    def test_download_filenames_use_original_name_prefix(self):
+        pid = self.create()
+        self.review(pid)
+        # Test subtitles download filename
+        r_vi = self.client.get(f'/api/projects/{pid}/files/vi.srt')
+        self.assertEqual(r_vi.status_code, 200)
+        self.assertIn('movie_vi.srt', r_vi.headers.get('content-disposition', ''))
+
+        r_ko = self.client.get(f'/api/projects/{pid}/files/ko.srt')
+        self.assertEqual(r_ko.status_code, 200)
+        self.assertIn('movie_ko.srt', r_ko.headers.get('content-disposition', ''))
+
+        # Test audio download filename
+        mp3_file = core.folder(pid) / 'narration.mp3'
+        mp3_file.write_bytes(b'fake-mp3-bytes')
+        r_mp3 = self.client.get(f'/api/projects/{pid}/files/narration.mp3')
+        self.assertEqual(r_mp3.status_code, 200)
+        self.assertIn('movie_thuyet_minh.mp3', r_mp3.headers.get('content-disposition', ''))
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

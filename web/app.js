@@ -327,11 +327,12 @@ function renderDownloadSection(p){
   }
 
   const btnGroup = el('div', undefined, 'download-btn-group');
+  const stem = (p.name || 'video').replace(/\.[^/.]+$/, '').trim() || 'video';
   const meta = {
-    'narration.mp3': { label: '🎵 Tải Audio MP3 (Thuyết minh)', primary: true, desc: 'Định dạng phổ biến, dung lượng nhẹ' },
-    'narration.wav': { label: '🎙️ Tải Audio WAV (Lossless)', primary: false, desc: 'Âm thanh chất lượng gốc cao nhất' },
-    'vi.srt': { label: '📝 Phụ đề Tiếng Việt (.SRT)', primary: false, desc: 'Sub chuẩn khớp từng giây' },
-    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video' }
+    'narration.mp3': { label: '🎵 Tải Audio MP3 (Thuyết minh)', primary: true, desc: 'Định dạng phổ biến, dung lượng nhẹ', dlName: `${stem}_thuyet_minh.mp3` },
+    'narration.wav': { label: '🎙️ Tải Audio WAV (Lossless)', primary: false, desc: 'Âm thanh chất lượng gốc cao nhất', dlName: `${stem}_thuyet_minh.wav` },
+    'vi.srt': { label: '📝 Phụ đề Tiếng Việt (.SRT)', primary: false, desc: 'Sub chuẩn khớp từng giây', dlName: `${stem}_vi.srt` },
+    'ko.srt': { label: '🇰🇷 Phụ đề Tiếng Hàn (.SRT)', primary: false, desc: 'Sub gốc trích xuất từ video', dlName: `${stem}_ko.srt` }
   };
 
   const order = ['narration.mp3', 'narration.wav', 'vi.srt', 'ko.srt'];
@@ -342,10 +343,10 @@ function renderDownloadSection(p){
   });
 
   for(const name of sorted){
-    const info = meta[name] || { label: `⬇️ Tải ${name}`, primary: false, desc: '' };
+    const info = meta[name] || { label: `⬇️ Tải ${name}`, primary: false, desc: '', dlName: `${stem}_${name}` };
     const a = el('a', undefined, 'btn-download' + (info.primary ? ' primary' : ''));
     a.href = `/api/projects/${p.id}/files/${name}`;
-    a.download = name;
+    a.download = info.dlName || name;
     
     const iconLabel = el('span', info.label, 'btn-download-title');
     a.append(iconLabel);
@@ -358,10 +359,44 @@ function renderDownloadSection(p){
   card.append(btnGroup);
   return card;
 }
+async function deleteProject(p){
+  let msg = `Xóa dự án "${p.name}" và xóa sạch toàn bộ file (video, audio...) để tránh rác dung lượng?`;
+  if(p.state === 'running'){
+    msg = `Dự án "${p.name}" ĐANG CHẠY. Bạn có chắc muốn DỪNG XỬ LÝ và XÓA SẠCH toàn bộ file?`;
+  }else if(p.state === 'queued'){
+    msg = `Hủy và xóa "${p.name}" khỏi hàng đợi?`;
+  }
+  if(!confirm(msg)) return;
+  try{
+    await api(`/projects/${p.id}`, {method: 'DELETE'});
+    toast(`Đã xóa dự án "${p.name}" và dọn sạch file.`);
+    if(selected === p.id){
+      selected = null;
+      current = null;
+      dirty = false;
+      drafts.clear();
+      $('#workspace').innerHTML = '<div class="empty"><span>◉</span><h2>Từ lời thoại đến giọng Việt</h2><p>Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.</p></div>';
+    }
+    await refresh(true);
+  }catch(err){
+    toast('Lỗi xóa dự án: ' + err.message);
+  }
+}
 function render(){
   stopPreview();
   const w=$('#workspace');w.replaceChildren(); const p=current;
-  const heading=el('div',undefined,'heading');heading.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'));w.append(heading);
+  const heading=el('div',undefined,'heading');
+  const hLeft=el('div',undefined,'heading-left');
+  hLeft.append(el('h2',p.name),el('span',labels[p.state]||p.state,'status'));
+  heading.append(hLeft);
+
+  const hActions=el('div',undefined,'heading-actions');
+  const delMainBtn=el('button','🗑️ Xóa dự án','btn-danger secondary');
+  delMainBtn.title='Xóa dự án và dọn sạch toàn bộ file';
+  delMainBtn.onclick=()=>deleteProject(p);
+  hActions.append(delMainBtn);
+  heading.append(hActions);
+  w.append(heading);
   w.append(renderPipeline(p));
   const dlSec = renderDownloadSection(p);
   if(dlSec) w.append(dlSec);
@@ -499,13 +534,36 @@ async function refresh(force=false){
   if(busy)return;busy=true;
   try{
     const all=await api('/projects');$('#projects').replaceChildren();
-    for(const p of all){const b=el('button',p.name,'project'+(p.id===selected?' active':''));b.append(el('small',`${labels[p.state]||p.state} · ${p.progress||p.step}`));b.onclick=async()=>{if(dirty&&!confirm('Bỏ các chỉnh sửa chưa lưu?'))return;selected=p.id;page=0;dirty=false;drafts.clear();filterWarnings=false;await refresh(true);};$('#projects').append(b);}
-    if(!selected&&all.length)selected=all[0].id;
-    if(selected&&!dirty&&!previewAudio){const p=await api(`/projects/${selected}`);const changed=force||!current||p.id!==current.id||p.state!==current.state||p.progress!==current.progress;if(changed){current=p;render();}}
+    for(const p of all){
+      const row=el('div',undefined,'project-row'+(p.id===selected?' active':''));
+      const b=el('button',p.name,'project-select-btn');
+      b.append(el('small',`${labels[p.state]||p.state} · ${p.progress||p.step}`));
+      b.onclick=async()=>{
+        if(dirty&&!confirm('Bỏ các chỉnh sửa chưa lưu?'))return;
+        selected=p.id;page=0;dirty=false;drafts.clear();filterWarnings=false;await refresh(true);
+      };
+      const delBtn=el('button','🗑️','project-del-btn');
+      delBtn.title='Xóa dự án và dọn sạch file';
+      delBtn.onclick=(e)=>{e.stopPropagation();deleteProject(p);};
+      row.append(b,delBtn);
+      $('#projects').append(row);
+    }
+    if(!all.length){
+      selected=null;current=null;
+      $('#workspace').innerHTML='<div class="empty"><span>◉</span><h2>Từ lời thoại đến giọng Việt</h2><p>Tải video lên để bắt đầu. Nhận dạng → Dịch → Duyệt → Tạo giọng → Xuất audio.</p></div>';
+    }else{
+      if(!selected||!all.some(x=>x.id===selected))selected=all[0].id;
+      if(selected&&!dirty&&!previewAudio){
+        const p=await api(`/projects/${selected}`);
+        const changed=force||!current||p.id!==current.id||p.state!==current.state||p.progress!==current.progress;
+        if(changed){current=p;render();}
+      }
+    }
   }catch(e){toast(e.message);}finally{busy=false;}
 }
 $('#upload').onclick=()=>{
-  const file=$('#file').files[0];if(!file){toast('Chọn một video trước.');return;}
+  const fileInput=$('#file');
+  const file=fileInput.files[0];if(!file){toast('Chọn một video trước.');return;}
   const form=new FormData();
   form.append('file',file);
   const voiceEl=$('#uploadVoice');
@@ -517,8 +575,27 @@ $('#upload').onclick=()=>{
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');
   $('#upload').disabled=true;$('#uploadProgress').hidden=false;
   xhr.upload.onprogress=e=>{if(e.lengthComputable)$('#uploadProgress').value=e.loaded/e.total*100;};
-  xhr.onload=()=>{if(xhr.status<300){selected=JSON.parse(xhr.responseText).id;dirty=false;drafts.clear();refresh(true);}else{toast('Upload lỗi: '+xhr.responseText);}$('#upload').disabled=false;$('#uploadProgress').hidden=true;};
-  xhr.onerror=()=>{toast('Không thể upload. Kiểm tra kết nối.');$('#upload').disabled=false;};xhr.send(form);
+  xhr.onload=()=>{
+    if(xhr.status<300){
+      fileInput.value='';
+      $('#uploadProgress').value=0;
+      selected=JSON.parse(xhr.responseText).id;
+      dirty=false;
+      drafts.clear();
+      refresh(true);
+      toast('Đã thêm video vào hàng đợi thành công!');
+    }else{
+      toast('Upload lỗi: '+xhr.responseText);
+    }
+    $('#upload').disabled=false;
+    $('#uploadProgress').hidden=true;
+  };
+  xhr.onerror=()=>{
+    toast('Không thể upload. Kiểm tra kết nối.');
+    $('#upload').disabled=false;
+    $('#uploadProgress').hidden=true;
+  };
+  xhr.send(form);
 };
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 initUploadForm();

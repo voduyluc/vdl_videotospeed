@@ -191,23 +191,57 @@ def action(pid: str, action: str):
     return {'ok': True}
 
 
+@app.delete('/api/projects/{pid}')
+def delete_project(pid: str):
+    row = project(pid)
+    if row['state'] == 'running':
+        update(pid, cancel=1)
+        for _ in range(15):
+            time.sleep(0.2)
+            with db() as c:
+                r = c.execute('SELECT state FROM projects WHERE id=?', (pid,)).fetchone()
+            if not r or r['state'] != 'running':
+                break
+    with db() as c:
+        c.execute('DELETE FROM projects WHERE id=?', (pid,))
+    p_folder = DATA / pid
+    if p_folder.exists():
+        shutil.rmtree(p_folder, ignore_errors=True)
+    return {'ok': True}
+
+
+def get_download_filename(project_name: str, export_name: str) -> str:
+    import re
+    stem = Path(project_name or 'video').stem
+    stem = re.sub(r'[\r\n\t"\'\\/]+', '_', stem).strip() or 'video'
+    suffixes = {
+        'narration.mp3': f'{stem}_thuyet_minh.mp3',
+        'narration.wav': f'{stem}_thuyet_minh.wav',
+        'vi.srt': f'{stem}_vi.srt',
+        'ko.srt': f'{stem}_ko.srt',
+    }
+    return suffixes.get(export_name, f'{stem}_{export_name}')
+
+
 @app.get('/api/projects/{pid}/files/{name}')
 def asset(pid: str, name: str):
-    project(pid)
+    row = project(pid)
     if name not in ('source', 'narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt'):
         raise HTTPException(404)
     path = folder(pid) / name
+    dl_name = get_download_filename(row.get('name') or 'video', name)
     if name in ('ko.srt', 'vi.srt'):
         segments = read_json(folder(pid) / 'segments.json', [])
         if not segments:
             raise HTTPException(404)
         return Response(subtitles(segments, 'source' if name == 'ko.srt' else 'translation'),
                         media_type='application/x-subrip; charset=utf-8',
-                        headers={'Content-Disposition': f'attachment; filename="{name}"'})
+                        headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(path, media_type='video/mp4' if name == 'source' else None,
-                        filename=None if name == 'source' else name)
+                        filename=None if name == 'source' else dl_name,
+                        headers=None if name == 'source' else {'Content-Disposition': f'attachment; filename="{dl_name}"'})
 
 
 @app.get('/api/projects/{pid}/segments/{sid}/audio')
