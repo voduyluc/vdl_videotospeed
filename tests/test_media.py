@@ -174,6 +174,7 @@ Line 2 with tags <b>bold</b>
             c.execute('INSERT INTO projects(id,name,state,step,duration,created,voice) VALUES(?,?,?,?,?,?,?)',
                       (pid, 'extract no audio', 'running', 'extract', 0, 0, 'test'))
         (p / 'source').write_bytes(b'fake_silent_video')
+        core.write_json(p / 'segments.json', [{'id': 's1', 'start': 0, 'end': 1, 'source': '', 'translation': 'Xin chào'}])
 
         with patch('app.media.has_audio_stream', return_value=False), \
              patch('app.media.duration', return_value=4.0):

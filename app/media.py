@@ -38,6 +38,10 @@ def extract(pid):
         dur = max(1.0, total if total and total > 0 else 5.0)
         create_silent_wav(p / 'stt.wav', dur, channels=1, sample_rate=16000)
         create_silent_wav(p / 'background.wav', dur, channels=2, sample_rate=48000)
+        if not read_json(p / 'segments.json', []):
+            update(pid, duration=dur)
+            raise RuntimeError('Video không có track âm thanh nên không thể nhận dạng lời thoại. '
+                               'Hãy tạo lại dự án và tải lên file phụ đề .srt (tiếng gốc hoặc tiếng Việt).')
 
     update(pid, duration=total if total and total > 0 else wav_duration(p / 'stt.wav'))
 

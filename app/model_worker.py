@@ -170,7 +170,9 @@ def transcribe(pid, model=None):
         if s['end'] > start:
             normalized.append(dict(s, start=start, id=f'seg_{len(normalized)+1:05}', translation=''))
     if not normalized:
-        raise RuntimeError('Không nhận dạng được lời thoại. Kiểm tra track audio đầu tiên.')
+        raise RuntimeError('Không nhận dạng được lời thoại trong video (video không có tiếng nói hoặc sai ngôn ngữ nguồn). '
+                           'Hãy kiểm tra lại "Ngôn ngữ video nguồn", hoặc tạo lại dự án và tải lên file phụ đề .srt '
+                           '(tiếng gốc hoặc tiếng Việt) để bỏ qua bước nhận dạng giọng nói.')
 
     if multi_speaker and (p / 'stt.wav').exists():
         import wave
