@@ -559,11 +559,32 @@ class PipelineTests(unittest.TestCase):
         from app.translate import parse_translation
         payload = '{"translations":[{"id":"s1","text":"Chào"}]}'
         for content in (payload, f'```json\n{payload}\n```', f'```\n{payload}\n```',
-                        f'<think>reasoning</think>\n```JSON\r\n{payload}\r\n```'):
+                        f'<think>reasoning</think>\n```JSON\r\n{payload}\r\n```',
+                        f'Here is translation:\n```json\n{payload}\n```\nHope it helps!'):
             with self.subTest(content=content):
                 self.assertEqual(parse_translation(content)[0]['text'], 'Chào')
         with self.assertRaises(ValueError):
             parse_translation('```json\ninvalid\n```')
+
+    def test_match_translations_resilience(self):
+        from app.translate import match_translations
+        batch = [{'id': 'seg_00792'}, {'id': 'seg_00793'}]
+
+        # 1. Exact match
+        res = match_translations(batch, [{'id': 'seg_00792', 'text': 'A'}, {'id': 'seg_00793', 'text': 'B'}])
+        self.assertEqual(res, {'seg_00792': 'A', 'seg_00793': 'B'})
+
+        # 2. Number / stripped ID match (e.g. 792 instead of seg_00792)
+        res = match_translations(batch, [{'id': '792', 'text': 'A'}, {'id': '793', 'text': 'B'}])
+        self.assertEqual(res, {'seg_00792': 'A', 'seg_00793': 'B'})
+
+        # 3. Integer IDs
+        res = match_translations(batch, [{'id': 792, 'text': 'A'}, {'id': 793, 'text': 'B'}])
+        self.assertEqual(res, {'seg_00792': 'A', 'seg_00793': 'B'})
+
+        # 4. Positional fallback when allow_positional is True
+        res = match_translations(batch, [{'id': 'x1', 'text': 'A'}, {'id': 'x2', 'text': 'B'}], allow_positional=True)
+        self.assertEqual(res, {'seg_00792': 'A', 'seg_00793': 'B'})
 
     def test_classify_audio_gender_pitch(self):
         import numpy as np

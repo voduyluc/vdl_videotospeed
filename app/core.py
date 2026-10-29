@@ -98,8 +98,18 @@ def read_json(path, default=None):
 
 def write_json(path, value):
     tmp = path.with_suffix(path.suffix + '.tmp')
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), 'utf-8')
-    tmp.replace(path)
+    text = json.dumps(value, ensure_ascii=False, indent=2)
+    tmp.write_text(text, 'utf-8')
+    try:
+        tmp.replace(path)
+    except PermissionError:
+        import time
+        time.sleep(0.05)
+        try:
+            tmp.replace(path)
+        except PermissionError:
+            path.write_text(text, 'utf-8')
+            tmp.unlink(missing_ok=True)
 
 
 def run(args):
