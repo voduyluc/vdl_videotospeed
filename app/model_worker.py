@@ -34,37 +34,92 @@ def load_stt():
 
 
 def classify_audio_gender(samples, sr=16000):
-    """Estimate fundamental frequency (pitch) using normalized autocorrelation in pure NumPy."""
+    """Estimate speaker gender from speech audio using normalized autocorrelation with
+    first-prominent-peak selection, low-frequency pre-emphasis, and spectral centroid fusion.
+    """
     import numpy as np
     if len(samples) < int(sr * 0.08):
         return None, None
     if isinstance(samples, np.ndarray) and samples.dtype == np.int16:
         samples = samples.astype(np.float32) / 32768.0
-    win_len = int(sr * 0.05)  # 50ms
-    hop = int(sr * 0.025)     # 25ms
+
+    # 1. Pre-emphasis / high-pass filter: y[n] = x[n] - 0.95 * x[n-1]
+    # Attenuates low-frequency rumble (< 70 Hz), room HVAC noise, and DC bias
+    pre_emp = np.empty_like(samples)
+    pre_emp[0] = samples[0]
+    pre_emp[1:] = samples[1:] - 0.95 * samples[:-1]
+
+    win_len = int(sr * 0.05)   # 50ms window
+    hop = int(sr * 0.025)      # 25ms hop
+    min_lag = max(2, int(sr / 500))  # Up to 500 Hz (~32 samples at 16kHz)
+    max_lag = min(win_len - 2, int(sr / 65))   # Down to 65 Hz (~246 samples at 16kHz)
+
     pitches = []
-    min_lag = int(sr / 350)   # ~45
-    max_lag = int(sr / 75)    # ~213
+    centroids = []
+
     for i in range(0, len(samples) - win_len, hop):
-        frame = samples[i:i+win_len]
-        energy = np.sum(frame ** 2)
+        raw_frame = samples[i:i+win_len]
+        energy = np.sum(raw_frame ** 2)
         if energy < 1e-4:
             continue
+
+        frame = pre_emp[i:i+win_len]
         frame = frame - np.mean(frame)
-        corr = np.correlate(frame, frame, mode='full')[win_len-1:]
+
+        corr = np.correlate(frame, frame, mode='full')[win_len - 1:]
         if corr[0] <= 0:
             continue
         norm_corr = corr / corr[0]
-        search_range = norm_corr[min_lag:max_lag]
-        if len(search_range) == 0:
+
+        # Search for local peaks in [min_lag, max_lag]
+        search = norm_corr[min_lag:max_lag]
+        if len(search) < 3:
             continue
-        peak_idx = int(np.argmax(search_range)) + min_lag
-        if norm_corr[peak_idx] > 0.35:
-            pitches.append(sr / peak_idx)
+
+        peaks = []
+        for k in range(min_lag + 1, min_lag + len(search) - 1):
+            if norm_corr[k] > norm_corr[k - 1] and norm_corr[k] >= norm_corr[k + 1]:
+                if norm_corr[k] >= 0.28:
+                    peaks.append((k, norm_corr[k]))
+
+        if not peaks:
+            continue
+
+        max_peak_val = max(p[1] for p in peaks)
+        # Select first prominent peak (at least 65% of max peak height) to prevent octave doubling (pitch halving)
+        chosen_lag = None
+        for lag, val in peaks:
+            if val >= 0.65 * max_peak_val:
+                alpha = norm_corr[lag - 1]
+                beta = norm_corr[lag]
+                gamma = norm_corr[lag + 1]
+                denom = 2 * (2 * beta - alpha - gamma)
+                delta = (gamma - alpha) / denom if abs(denom) > 1e-6 else 0.0
+                chosen_lag = lag + delta
+                break
+
+        if chosen_lag and chosen_lag > 0:
+            f0 = sr / chosen_lag
+            if 65.0 <= f0 <= 500.0:
+                pitches.append(f0)
+                fft = np.abs(np.fft.rfft(raw_frame * np.hanning(win_len)))
+                freqs = np.fft.rfftfreq(win_len, d=1.0/sr)
+                sc = np.sum(freqs * fft) / (np.sum(fft) + 1e-8)
+                centroids.append(sc)
+
     if not pitches:
         return None, None
+
     median_f0 = float(np.median(pitches))
-    gender = 'male' if median_f0 < 165.0 else 'female'
+    median_sc = float(np.median(centroids)) if centroids else 1300.0
+
+    # Composite gender score combining pitch and spectral centroid:
+    # Female vocal tract length is ~15% shorter than male, giving higher formants and spectral centroid (> 1500 Hz).
+    # Typical adult male mean F0 is ~110-120 Hz; adult female is ~180-220 Hz.
+    # Base threshold: 148 Hz. If a mature female voice has lower pitch (~150-160 Hz),
+    # high spectral centroid elevates composite score to correctly classify as female.
+    composite_score = median_f0 + 0.035 * (median_sc - 1300.0)
+    gender = 'male' if composite_score < 148.0 else 'female'
     return gender, median_f0
 
 
@@ -124,7 +179,10 @@ def transcribe(pid, model=None):
             with wave.open(str(p / 'stt.wav'), 'rb') as wf:
                 sr = wf.getframerate()
                 total_frames = wf.getnframes()
-                last_gender = 'male'
+                
+                # Pass 1: compute pitch and features for each segment
+                seg_results = []
+                all_valid_pitches = []
                 for s in normalized:
                     start_f = max(0, min(total_frames, int(s['start'] * sr)))
                     end_f = max(0, min(total_frames, int(s['end'] * sr)))
@@ -133,9 +191,36 @@ def transcribe(pid, model=None):
                         wf.setpos(start_f)
                         raw_bytes = wf.readframes(n_frames)
                         samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-                        gender, _ = classify_audio_gender(samples, sr)
+                        gender, f0 = classify_audio_gender(samples, sr)
                     else:
-                        gender = None
+                        gender, f0 = None, None
+                    seg_results.append((gender, f0))
+                    if f0 is not None and 65.0 <= f0 <= 500.0:
+                        all_valid_pitches.append(f0)
+
+                # Video-level adaptive calibration for 2-speaker dialogues/interviews (e.g. 1 male, 1 female)
+                adaptive_thresh = None
+                if len(all_valid_pitches) >= 4:
+                    arr = np.array(all_valid_pitches)
+                    c1, c2 = float(np.percentile(arr, 25)), float(np.percentile(arr, 75))
+                    for _ in range(8):
+                        g1 = arr[np.abs(arr - c1) <= np.abs(arr - c2)]
+                        g2 = arr[np.abs(arr - c1) > np.abs(arr - c2)]
+                        if len(g1) == 0 or len(g2) == 0:
+                            break
+                        c1 = float(np.mean(g1))
+                        c2 = float(np.mean(g2))
+                    if c1 > c2:
+                        c1, c2 = c2, c1
+                    # Two distinct speaker clusters spanning across male/female ranges
+                    if (c2 - c1 >= 25.0) and (c1 < 145.0) and (c2 > 140.0):
+                        adaptive_thresh = (c1 + c2) / 2.0
+
+                last_gender = 'male'
+                for idx, s in enumerate(normalized):
+                    gender, f0 = seg_results[idx]
+                    if adaptive_thresh is not None and f0 is not None:
+                        gender = 'female' if f0 >= adaptive_thresh else 'male'
                     if not gender:
                         gender = last_gender
                     last_gender = gender

@@ -449,6 +449,56 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(rows[1]['start'], 3)
         self.assertEqual(rows[1]['id'], 'seg_00002')
 
+    def test_stt_multi_speaker_adaptive_clustering(self):
+        import numpy as np
+        from app.model_worker import transcribe
+        pid = '1' * 32
+        with core.db() as c:
+            c.execute('INSERT OR REPLACE INTO projects(id,name,state,step,created,voice,multi_speaker,voice_male,voice_female) VALUES(?,?,?,?,?,?,?,?,?)',
+                      (pid, 'test_adaptive', 'running', 'stt', 0, 'Hải Đăng', 1, 'Hải Đăng', 'Mai Anh'))
+
+        sr = 16000
+        t = np.linspace(0, 2.0, sr * 2, endpoint=False)
+        male_audio = (np.sin(2 * np.pi * 110 * t) * 20000).astype(np.int16)
+        female_audio = ((np.sin(2 * np.pi * 155 * t) + 0.7 * np.sin(2 * np.pi * 1800 * t)) * 15000).astype(np.int16)
+        combined = np.concatenate([male_audio, female_audio, male_audio, female_audio])
+
+        wav_path = core.folder(pid) / 'stt.wav'
+        with wave.open(str(wav_path), 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(combined.tobytes())
+
+        class Speech:
+            def __init__(self, start, end, text):
+                self.start, self.end, self.text = start, end, text
+
+        class Model:
+            def transcribe(self, *args, **kwargs):
+                return [
+                    Speech(0.2, 1.8, 'Musk line 1'),
+                    Speech(2.2, 3.8, 'Zanny line 1'),
+                    Speech(4.2, 5.8, 'Musk line 2'),
+                    Speech(6.2, 7.8, 'Zanny line 2'),
+                ], None
+
+        model = Model()
+        with patch('app.model_worker.duration', return_value=8.0), patch('app.model_worker.run'):
+            transcribe(pid, model)
+
+        segments = core.read_json(core.folder(pid) / 'segments.json')
+        self.assertEqual(len(segments), 4)
+        # Check that male segments are Hải Đăng and female segments are Mai Anh
+        self.assertEqual(segments[0]['speaker'], 'Nam')
+        self.assertEqual(segments[0]['voice'], 'Hải Đăng')
+        self.assertEqual(segments[1]['speaker'], 'Nữ')
+        self.assertEqual(segments[1]['voice'], 'Mai Anh')
+        self.assertEqual(segments[2]['speaker'], 'Nam')
+        self.assertEqual(segments[2]['voice'], 'Hải Đăng')
+        self.assertEqual(segments[3]['speaker'], 'Nữ')
+        self.assertEqual(segments[3]['voice'], 'Mai Anh')
+
     def test_batch_reuses_model_and_isolates_project_failure(self):
         from app.batch import main
         ids = ['f' * 32, 'a' * 32]
@@ -606,6 +656,26 @@ class PipelineTests(unittest.TestCase):
         self.assertAlmostEqual(male_f0, 120.0, delta=5.0)
         self.assertEqual(female_gender, 'female')
         self.assertAlmostEqual(female_f0, 220.0, delta=5.0)
+
+        # Deep/mature female voice (~152 Hz) with higher formants/spectral centroid (> 1500 Hz)
+        # (e.g. Zanny Minton Beddoes in Elon Musk interview)
+        female_deep = (
+            (np.sin(2 * np.pi * 152 * t) +
+             0.7 * np.sin(2 * np.pi * 1824 * t) +
+             0.5 * np.sin(2 * np.pi * 2584 * t)) * 16383
+        ).astype(np.int16)
+        f_deep_gender, f_deep_f0 = classify_audio_gender(female_deep, sr)
+        self.assertEqual(f_deep_gender, 'female')
+        self.assertAlmostEqual(f_deep_f0, 152.0, delta=6.0)
+
+        # Octave jumping resistance: female voice (190 Hz) with subharmonic interference
+        # First-peak picking must identify 190 Hz instead of halving to 95 Hz
+        female_subharmonic = (
+            (np.sin(2 * np.pi * 190 * t) + 0.5 * np.sin(2 * np.pi * 380 * t)) * 20000
+        ).astype(np.int16)
+        f_sub_gender, f_sub_f0 = classify_audio_gender(female_subharmonic, sr)
+        self.assertEqual(f_sub_gender, 'female')
+        self.assertAlmostEqual(f_sub_f0, 190.0, delta=6.0)
 
     def test_multi_speaker_segment_synthesis_voices(self):
         from app.model_worker import synthesize
