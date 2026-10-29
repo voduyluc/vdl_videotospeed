@@ -11,7 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.core import DATA, ROOT, db, folder, read_json, subtitles, update, write_json
+from app.core import DATA, ROOT, db, folder, read_json, subtitles, tts_key, update, write_json
 
 security = HTTPBasic()
 
@@ -144,7 +144,7 @@ def asset(pid: str, name: str):
         if not segments:
             raise HTTPException(404)
         return Response(subtitles(segments, 'source' if name == 'ko.srt' else 'translation'),
-                        media_type='application/x-subrip',
+                        media_type='application/x-subrip; charset=utf-8',
                         headers={'Content-Disposition': f'attachment; filename="{name}"'})
     if not path.exists():
         raise HTTPException(404)
@@ -154,15 +154,18 @@ def asset(pid: str, name: str):
 
 @app.get('/api/projects/{pid}/segments/{sid}/audio')
 def segment_audio(pid: str, sid: str):
-    project(pid)
+    row = project(pid)
     manifest = read_json(folder(pid) / 'tts-manifest.json', [])
     record = next((m for m in manifest if m['id'] == sid), None)
     if record is None:
         raise HTTPException(404, 'Chưa tạo audio cho đoạn này')
     path = Path(record['file']).resolve()
+    segment = next((s for s in read_json(folder(pid) / 'segments.json', []) if s['id'] == sid), None)
+    if segment is None or path.stem != tts_key(segment['translation'], row['voice']):
+        raise HTTPException(409, 'Bản dịch hoặc giọng đã đổi. Hãy tạo lại audio cho đoạn này.')
     if path.parent != (folder(pid) / 'tts').resolve() or not path.exists():
         raise HTTPException(404)
-    return FileResponse(path, media_type='audio/wav')
+    return FileResponse(path, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/')

@@ -1,12 +1,14 @@
 # Viet Voice Studio
 
-Web app cá nhân tạo audio thuyết minh tiếng Việt từ video tiếng Hàn, chạy model local trên **Ubuntu 22.04 x86_64 / NVIDIA RTX 5060 8 GB**.
+Web app cá nhân tạo audio thuyết minh tiếng Việt từ video tiếng Hàn, chạy model local trên **Ubuntu 24.04.4 LTS x86_64 / NVIDIA RTX 5060 8 GB**.
 
 Pipeline: FFmpeg → faster-whisper large-v3 INT8 → Qwen3-8B Q4_K_M → duyệt bản dịch → VieNeu-TTS v3 Turbo → căn timeline → WAV/MP3/SRT.
 
 ## Cài đặt trên server
 
-Yêu cầu: Ubuntu 22.04, tài khoản thường có sudo, NVIDIA driver hoạt động với RTX 5060 và CUDA 12.8. Chạy `nvidia-smi` trước. Installer **không cài hoặc thay driver NVIDIA**. Nên có RAM 32 GB, ổ SSD còn ít nhất 40 GB cho môi trường/model, cộng dung lượng video và audio. Lần đầu cần Internet để tải package và model.
+Yêu cầu: Ubuntu 24.04 LTS (bao gồm 24.04.4), Python 3.12 mặc định của hệ điều hành, tài khoản thường có sudo, NVIDIA driver hoạt động với RTX 5060 và CUDA 12.8. Chạy `nvidia-smi` trước. Installer **không cài hoặc thay driver NVIDIA**. Nên có RAM 32 GB, ổ SSD còn ít nhất 40 GB cho môi trường/model, cộng dung lượng video và audio. Lần đầu cần Internet để tải package và model.
+
+Installer kiểm tra `VERSION_ID=24.04` trong `/etc/os-release` vì các bản cập nhật 24.04.x dùng chung giá trị này. CUDA toolkit được cài từ repository NVIDIA dành cho `ubuntu2404`. CI dùng Ubuntu 24.04 / Python 3.12.
 
 Clone repository vào thư mục do tài khoản của bạn sở hữu, đường dẫn không có khoảng trắng hoặc ký tự `%`:
 
@@ -58,6 +60,8 @@ Uninstall không gỡ CUDA, driver hoặc apt package dùng chung; không xóa v
 3. Ở trạng thái **Chờ duyệt**, sửa bản dịch. Nhấn timestamp để nghe lại đoạn gốc. Phụ đề SRT có thể tải ngay trước TTS.
 4. Chọn tên giọng preset VieNeu hợp lệ, ví dụ `Hải Đăng`, bấm **Lưu & tạo audio**.
 5. Tải WAV/MP3 và SRT. Nếu câu quá dài, hệ thống báo lỗi và đánh dấu viền cam; rút gọn câu rồi tạo lại. Những câu không thay đổi dùng lại cache TTS.
+
+Nút **Nghe thử** bên cạnh mỗi câu phát audio TTS đã tạo cho câu đó; bấm **Dừng** để ngắt. Nếu chưa có audio hoặc bản dịch/giọng đã thay đổi, cần tạo lại trước khi nghe. Chỉ phát một đoạn nghe thử tại một thời điểm.
 
 Audio xuất có timeline bắt đầu từ 0, gồm khoảng lặng và lời Việt. Hệ thống sử dụng khoảng trống trước câu kế tiếp và tăng tốc tối đa `MAX_SPEED`, mặc định 1.18. Không cắt lời để ép vừa thời gian. Nếu vẫn tràn, không xuất bản audio bị lệch; hiện cần sửa thủ công, chưa có vòng LLM tự rút gọn.
 

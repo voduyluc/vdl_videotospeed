@@ -3,7 +3,8 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_user
 source /etc/os-release
-[[ "$ID" == ubuntu && "$VERSION_ID" == 22.04 && "$(uname -m)" == x86_64 ]] || { echo 'Supported: Ubuntu 22.04 x86_64'; exit 1; }
+# Ubuntu point releases (including 24.04.4) report VERSION_ID=24.04.
+[[ "$ID" == ubuntu && "$VERSION_ID" == 24.04 && "$(uname -m)" == x86_64 ]] || { echo 'Supported: Ubuntu 24.04 LTS (including 24.04.4) x86_64'; exit 1; }
 [[ "$ROOT" != *[[:space:]%]* ]] || { echo 'Clone into a path without whitespace or %'; exit 1; }
 command -v nvidia-smi >/dev/null || { echo 'Install the NVIDIA driver for RTX 5060 and reboot first.'; exit 1; }
 nvidia-smi
@@ -12,7 +13,7 @@ nvidia-smi
 if [[ "${1:-}" == --install-cuda-toolkit ]]; then
   temp="$(mktemp -d)"
   trap 'rm -rf -- "$temp"' EXIT
-  curl --fail --location --retry 3 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb -o "$temp/cuda-keyring.deb"
+  curl --fail --location --retry 3 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb -o "$temp/cuda-keyring.deb"
   "${SUDO[@]}" dpkg -i "$temp/cuda-keyring.deb"
   "${SUDO[@]}" apt-get update
   "${SUDO[@]}" apt-get install -y cuda-toolkit-12-8

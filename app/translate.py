@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import time
 from contextlib import contextmanager, nullcontext
@@ -8,6 +9,16 @@ from pathlib import Path
 import httpx
 
 from app.core import ROOT, folder, read_json, update, write_json
+
+
+def parse_translation(content):
+    content = content.strip()
+    if '</think>' in content:
+        content = content.split('</think>', 1)[1].strip()
+    fenced = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\s*```', content, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        content = fenced.group(1)
+    return json.loads(content)['translations']
 
 
 @contextmanager
@@ -84,9 +95,7 @@ def translate(pid, shared_client=None):
                         'response_format': {'type': 'json_object'}})
                     response.raise_for_status()
                     content = response.json()['choices'][0]['message']['content']
-                    if '</think>' in content:
-                        content = content.split('</think>', 1)[1].strip()
-                    rows = json.loads(content)['translations']
+                    rows = parse_translation(content)
                     if [r['id'] for r in rows] != [s['id'] for s in batch]:
                         raise ValueError('Translation IDs mismatch')
                     if any(not isinstance(r['text'], str) or not r['text'].strip() for r in rows):

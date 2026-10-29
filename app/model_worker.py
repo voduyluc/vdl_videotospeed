@@ -1,10 +1,9 @@
 """Short-lived GPU processes. Model imports never enter the web/API process."""
-import hashlib
 import math
 import os
 import sys
 
-from app.core import duration, folder, read_json, run, update, write_json
+from app.core import duration, folder, read_json, run, tts_key, update, wav_duration, write_json
 
 
 def load_stt():
@@ -71,14 +70,16 @@ def synthesize(pid, model=None):
         text = s['translation'].strip()
         if not text:
             raise ValueError(f"Missing translation: {s['id']}")
-        key = hashlib.sha256((text + '\0' + voice + '\0vieneu-3.8.3-v3turbo').encode()).hexdigest()
+        key = tts_key(text, voice)
         path = p / 'tts' / f'{key}.wav'
         if not path.exists():
             temporary = path.with_name(key + '.tmp.wav')
             model.save(model.infer(text, voice=voice), str(temporary))
-            duration(temporary)  # Verify the file before publishing the checkpoint.
+            seconds = wav_duration(temporary)  # Verify before publishing the checkpoint.
             temporary.replace(path)
-        manifest.append({'id': s['id'], 'file': str(path), 'duration': duration(path)})
+        else:
+            seconds = wav_duration(path)
+        manifest.append({'id': s['id'], 'file': str(path), 'duration': seconds})
         write_json(p / 'tts-manifest.json', manifest)
         update(pid, progress=f'TTS {i+1}/{len(segments)}')
 

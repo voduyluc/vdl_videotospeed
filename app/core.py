@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import sqlite3
 import subprocess
@@ -76,6 +77,22 @@ def run(args):
 def duration(path):
     return float(run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                       '-of', 'default=noprint_wrappers=1:nokey=1', path]).strip())
+
+
+def wav_duration(path):
+    """Read WAV metadata in-process; handle float WAV from TTS encoders too."""
+    import wave
+    try:
+        with wave.open(str(path), 'rb') as audio:
+            return audio.getnframes() / audio.getframerate()
+    except wave.Error:
+        import soundfile
+        info = soundfile.info(str(path))
+        return info.frames / info.samplerate
+
+
+def tts_key(text, voice):
+    return hashlib.sha256((text.strip() + '\0' + voice + '\0vieneu-3.8.3-v3turbo').encode()).hexdigest()
 
 
 def python_for(stage):

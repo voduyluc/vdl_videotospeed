@@ -6,7 +6,7 @@ import wave
 from pathlib import Path
 
 # Import the isolated test database setup, also when this module runs separately.
-from test_app import core
+from tests.test_app import core
 from app.media import export
 
 

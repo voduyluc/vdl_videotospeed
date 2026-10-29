@@ -1,20 +1,12 @@
-import importlib
 import os
-import tempfile
 import unittest
 import wave
 from pathlib import Path
 from unittest.mock import patch
 
-# A fresh test-only database. Never touch production data or reset its jobs.
-temporary = tempfile.TemporaryDirectory(prefix='.testdata-', dir=Path(__file__).resolve().parents[1])
-os.environ['DATA_DIR'] = temporary.name
-os.environ['APP_PASSWORD'] = 'test-password'
-
-from app import core
+from tests.support import core
 from app.main import app
 from fastapi.testclient import TestClient
-core.init_db()
 
 
 class ApiTests(unittest.TestCase):
@@ -74,6 +66,29 @@ class ApiTests(unittest.TestCase):
         r = self.client.get(f'/api/projects/{pid}/files/vi.srt')
         self.assertIn('00:00:01,000 --> 00:00:03,000', r.text)
         self.assertIn('Xin chào', r.text)
+        self.assertEqual(r.headers['content-type'], 'application/x-subrip; charset=utf-8')
+
+    def test_segment_preview_rejects_stale_text_and_voice(self):
+        pid = self.create()
+        segments = self.review(pid)
+        p = core.folder(pid)
+        (p / 'tts').mkdir()
+        key = core.tts_key(segments[0]['translation'], 'Hải Đăng')
+        path = p / 'tts' / f'{key}.wav'
+        path.write_bytes(b'cached-audio')
+        core.write_json(p / 'tts-manifest.json', [{'id': 's1', 'file': str(path), 'duration': 1}])
+        url = f'/api/projects/{pid}/segments/s1/audio'
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers['cache-control'], 'no-store')
+        self.assertEqual(self.client.get(f'/api/projects/{pid}/segments/missing/audio').status_code, 404)
+        segments[0]['translation'] = 'Chào bạn'
+        core.write_json(p / 'segments.json', segments)
+        self.assertEqual(self.client.get(url).status_code, 409)
+        segments[0]['translation'] = 'Xin chào'
+        core.write_json(p / 'segments.json', segments)
+        core.update(pid, voice='Mai Anh')
+        self.assertEqual(self.client.get(url).status_code, 409)
 
     def test_restart_recovers_only_running(self):
         pid = self.create()
@@ -178,9 +193,14 @@ class PipelineTests(unittest.TestCase):
         class Model:
             calls = 0
             def infer(self, text, voice): self.calls += 1; return b'audio'
-            def save(self, audio, path): Path(path).write_bytes(audio)
+            def save(self, audio, path):
+                with wave.open(str(path), 'wb') as out:
+                    out.setnchannels(1)
+                    out.setsampwidth(2)
+                    out.setframerate(16000)
+                    out.writeframes(b'\0\0' * 16000)
         model = Model()
-        with patch('app.model_worker.duration', return_value=1):
+        with patch('app.model_worker.duration', side_effect=AssertionError('TTS must not invoke ffprobe')):
             synthesize(pid, model)
             synthesize(pid, model)
             self.assertEqual(model.calls, 1)
@@ -188,6 +208,17 @@ class PipelineTests(unittest.TestCase):
             core.write_json(path, rows)
             synthesize(pid, model)
             self.assertEqual(model.calls, 2)
+        self.assertEqual(core.read_json(core.folder(pid) / 'tts-manifest.json')[0]['duration'], 1)
+
+    def test_translation_markdown_and_thinking(self):
+        from app.translate import parse_translation
+        payload = '{"translations":[{"id":"s1","text":"Chào"}]}'
+        for content in (payload, f'```json\n{payload}\n```', f'```\n{payload}\n```',
+                        f'<think>reasoning</think>\n```JSON\r\n{payload}\r\n```'):
+            with self.subTest(content=content):
+                self.assertEqual(parse_translation(content)[0]['text'], 'Chào')
+        with self.assertRaises(ValueError):
+            parse_translation('```json\ninvalid\n```')
 
     def test_subtitle_rounding(self):
         self.assertEqual(core.stamp(59.9999), '00:01:00,000')
