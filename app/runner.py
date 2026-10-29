@@ -124,7 +124,13 @@ def main():
         update(pid, state='running', error=None, progress=step)
         if execute(pid, step):
             if step == 'translate':
-                update(pid, state='review', step='tts', progress='Chờ duyệt bản dịch')
+                with db() as c:
+                    r = c.execute('SELECT pause_review FROM projects WHERE id=?', (pid,)).fetchone()
+                pause = r['pause_review'] if r and 'pause_review' in r.keys() else 1
+                if pause:
+                    update(pid, state='review', step='tts', progress='Chờ duyệt bản dịch')
+                else:
+                    update(pid, state='queued', step='tts', progress='Tự động tiếp tục TTS')
             elif step == 'export':
                 update(pid, state='completed', progress='Hoàn tất')
             else:

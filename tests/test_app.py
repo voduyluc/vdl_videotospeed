@@ -106,6 +106,23 @@ class ApiTests(unittest.TestCase):
             r = self.client.post('/api/projects', files={'file': ('large.mp4', b'x')})
         self.assertEqual(r.status_code, 413)
 
+    def test_upload_with_voice_and_pause_review_settings(self):
+        r = self.client.post('/api/projects', files={'file': ('movie.mp4', b'video', 'video/mp4')},
+                             data={'voice': 'Mai Anh', 'pause_review': '0'})
+        self.assertEqual(r.status_code, 200)
+        pid = r.json()['id']
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['voice'], 'Mai Anh')
+        self.assertEqual(proj['pause_review'], 0)
+
+    def test_patch_project_settings(self):
+        pid = self.create()
+        r = self.client.patch(f'/api/projects/{pid}/settings', json={'voice': 'Trúc Ly', 'pause_review': False})
+        self.assertEqual(r.status_code, 200)
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['voice'], 'Trúc Ly')
+        self.assertEqual(proj['pause_review'], 0)
+
     def test_empty_translation_cannot_generate(self):
         pid = self.create()
         segments = self.review(pid)
@@ -158,6 +175,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(first['state'], 'failed')
         self.assertEqual(second['state'], 'queued')
         self.assertEqual(second['step'], 'translate')
+
+    def test_batch_auto_transitions_to_tts_when_pause_disabled(self):
+        from app.batch import main
+        pid = 'd' * 32
+        with core.db() as c:
+            c.execute('INSERT OR REPLACE INTO projects(id,name,state,step,created,voice,pause_review) VALUES(?,?,?,?,?,?,?)',
+                      (pid, 'batch-no-pause', 'queued', 'translate', 0, 'test', 0))
+        with patch('app.translate.translate'), patch('app.translate.engine'):
+            main('translate', [pid])
+        with core.db() as c:
+            row = dict(c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone())
+        self.assertEqual(row['state'], 'queued')
+        self.assertEqual(row['step'], 'tts')
 
     def test_translation_retry_validation_and_resume(self):
         from app.translate import translate

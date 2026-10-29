@@ -74,7 +74,7 @@ Sửa `.env`, sau đó `bash scripts/stop.sh && bash scripts/start.sh`.
 | Biến | Ý nghĩa |
 | --- | --- |
 | `APP_PASSWORD` | Mật khẩu HTTP Basic của tài khoản admin; không để trống |
-| `HOST`, `PORT` | Bind web; mặc định 127.0.0.1:8080 |
+| `HOST`, `PORT` | Bind web; mặc định 0.0.0.0:8080 (hoặc 127.0.0.1 nếu chỉ dùng SSH tunnel) |
 | `DATA_DIR` | Vị trí SQLite và dữ liệu video; đường dẫn tương đối tính từ thư mục repo |
 | `MAX_UPLOAD_GB` | Giới hạn dung lượng từng file được lưu, mặc định 12 GB |
 | `WHISPER_MODEL` | Mặc định large-v3; có thể thử model nhỏ hơn khi thiếu VRAM |

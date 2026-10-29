@@ -5,7 +5,7 @@ import shutil
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +34,40 @@ def project(pid):
     return dict(row)
 
 
+VOICES = [
+    {'id': 'Hải Đăng', 'label': 'Hải Đăng (Nam Bắc - Chuẩn/Mặc định)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Mai Anh', 'label': 'Mai Anh (Nữ Bắc - Tự nhiên)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Trúc Ly', 'label': 'Trúc Ly (Nữ Nam - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Thiện Minh', 'label': 'Thiện Minh (Nam Bắc - Trầm ấm)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Thùy Dung', 'label': 'Thùy Dung (Nữ Nam - Dịu dàng)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Ngọc Huyền', 'label': 'Ngọc Huyền (Nữ Bắc - Nhẹ nhàng)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Quang Sơn', 'label': 'Quang Sơn (Nam Trung - Truyền cảm)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Ngọc Trân', 'label': 'Ngọc Trân (Nữ Trung - Ngọt ngào)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Thiền Tâm Đức', 'label': 'Thiền Tâm Đức (Nam - Phật pháp/Trầm)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Adam bựa', 'label': 'Adam bựa (Nam - Hài hước/Vlog)', 'group': '⭐ Đề xuất hàng đầu'},
+    {'id': 'Minh Đức', 'label': 'Minh Đức (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Phạm Tuyên', 'label': 'Phạm Tuyên (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Xuân Vĩnh', 'label': 'Xuân Vĩnh (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Thanh Bình', 'label': 'Thanh Bình (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Quốc Tuấn', 'label': 'Quốc Tuấn (Nam Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Ngọc Linh', 'label': 'Ngọc Linh (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Đoan Trang', 'label': 'Đoan Trang (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Quỳnh Anh', 'label': 'Quỳnh Anh (Nữ Bắc)', 'group': '🏙️ Miền Bắc'},
+    {'id': 'Thái Sơn', 'label': 'Thái Sơn (Nam Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Minh Triết', 'label': 'Minh Triết (Nam Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Đức Trí', 'label': 'Đức Trí (Nam Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Adam', 'label': 'Adam (Nam Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Thục Đoan', 'label': 'Thục Đoan (Nữ Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Mỹ Duyên', 'label': 'Mỹ Duyên (Nữ Nam)', 'group': '🌴 Miền Nam'},
+    {'id': 'Kim Thanh', 'label': 'Kim Thanh (Nữ Nam)', 'group': '🌴 Miền Nam'},
+]
+
+
+@app.get('/api/voices')
+def list_voices():
+    return VOICES
+
+
 @app.get('/api/projects')
 def projects():
     with db() as c:
@@ -41,11 +75,13 @@ def projects():
 
 
 @app.post('/api/projects')
-def upload(file: UploadFile):
+def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
     size = 0
+    selected_voice = voice.strip() if voice and voice.strip() else os.getenv('TTS_VOICE', 'Hải Đăng')
+    pause_flag = 1 if int(pause_review) else 0
     try:
         with (p / 'source').open('wb') as out:
             while chunk := file.file.read(1024 * 1024):
@@ -56,9 +92,9 @@ def upload(file: UploadFile):
         if not size:
             raise HTTPException(400, 'Empty file')
         with db() as c:
-            c.execute('INSERT INTO projects(id,name,state,step,created,voice) VALUES(?,?,?,?,?,?)',
+            c.execute('INSERT INTO projects(id,name,state,step,created,voice,pause_review) VALUES(?,?,?,?,?,?,?)',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', time.time(),
-                       os.getenv('TTS_VOICE', 'Hải Đăng')))
+                       selected_voice, pause_flag))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -111,6 +147,24 @@ def edit(pid: str, body: Edit):
     for name in ('narration.wav', 'narration.mp3', 'ko.srt', 'vi.srt'):
         (folder(pid) / name).unlink(missing_ok=True)
     update(pid, state='review', step='tts', voice=body.voice, error=None)
+    return {'ok': True}
+
+
+class ProjectSettings(BaseModel):
+    voice: str | None = Field(default=None, max_length=100)
+    pause_review: bool | int | None = None
+
+
+@app.patch('/api/projects/{pid}/settings')
+def update_settings(pid: str, body: ProjectSettings):
+    project(pid)
+    values = {}
+    if body.voice is not None and body.voice.strip():
+        values['voice'] = body.voice.strip()
+    if body.pause_review is not None:
+        values['pause_review'] = 1 if body.pause_review else 0
+    if values:
+        update(pid, **values)
     return {'ok': True}
 
 

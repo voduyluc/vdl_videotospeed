@@ -6,7 +6,27 @@ import sys
 from app.core import duration, folder, read_json, run, tts_key, update, wav_duration, write_json
 
 
+def _patch_av():
+    try:
+        import av
+        _original_open = av.open
+
+        def _patched_open(*args, **kwargs):
+            try:
+                return _original_open(*args, **kwargs)
+            except TypeError as e:
+                if 'metadata_errors' in str(e):
+                    kwargs.pop('metadata_errors', None)
+                    return _original_open(*args, **kwargs)
+                raise
+
+        av.open = _patched_open
+    except Exception:
+        pass
+
+
 def load_stt():
+    _patch_av()
     from faster_whisper import WhisperModel
     return WhisperModel(os.getenv('WHISPER_MODEL', 'large-v3'),
                         device=os.getenv('WHISPER_DEVICE', 'cuda'),

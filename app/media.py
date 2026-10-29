@@ -55,9 +55,15 @@ def export(pid):
                  '-af', f'atempo={speed:.6f}', '-ar', rate, '-ac', 1, '-c:a', 'pcm_s16le', clip])
             with wave.open(str(clip), 'rb') as audio:
                 frames = audio.getnframes()
+                actual_dur = frames / rate
                 if frames > round(available * rate):
-                    warnings.append({'id': s['id'], 'overflow_seconds':
-                                     round(frames / rate - available, 3)})
+                    warnings.append({
+                        'id': s['id'],
+                        'available_seconds': round(available, 2),
+                        'actual_seconds': round(actual_dur, 2),
+                        'overflow_seconds': round(actual_dur - available, 3),
+                        'audio_duration': round(m['duration'], 2),
+                    })
                 while chunk := audio.readframes(rate):
                     out.writeframesraw(chunk)
                 position += frames

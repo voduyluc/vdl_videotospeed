@@ -64,4 +64,4 @@ done
 "${SUDO[@]}" systemctl daemon-reload
 "${SUDO[@]}" systemctl enable "$SERVICE-worker" "$SERVICE-web"
 bash scripts/start.sh
-echo 'Installed. Open http://127.0.0.1:8080 (or use an SSH tunnel). See README for remote access.'
+echo 'Installed. Open http://localhost:8080 (or your LAN/VPN IP: http://<server-ip>:8080). See README for remote access.'
