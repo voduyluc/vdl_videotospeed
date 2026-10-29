@@ -1,5 +1,6 @@
 const $ = s => document.querySelector(s);
 let selected = null, current = null, dirty = false, page = 0, busy = false, filterWarnings = false;
+let uploadQueue = [];
 function countWords(s){ return (s||'').trim().split(/\s+/).filter(Boolean).length; }
 const drafts = new Map();
 let previewAudio = null, previewUrl = null, previewButton = null, previewRequest = 0;
@@ -283,7 +284,16 @@ const I18N = {
     restoreVerConfirm: "Bạn có chắc muốn khôi phục phiên bản {0} (Giọng {1}) làm phiên bản hiện tại?",
     restoreVerSuccess: "Đã khôi phục phiên bản {0} thành công!",
     watchVerVideo: "Xem video ({0})",
-    playingVerVideo: "Đang phát video phiên bản {0}"
+    playingVerVideo: "Đang phát video phiên bản {0}",
+    uploadQueueTitle: "📤 Đang tải lên ({0})",
+    toastUploadQueued: "Đã thêm \"{0}\" vào hàng đợi tải lên!",
+    toastUploadSuccessNamed: "Đã tải lên thành công: \"{0}\"!",
+    toastUploadCancelled: "Đã hủy tải lên \"{0}\"",
+    uploadProcessingServer: "Đang xử lý trên máy chủ...",
+    retryUpload: "Thử lại",
+    cancelUpload: "Hủy tải lên",
+    uploadQueueMultipleNotice: "Đang tải lên {0} video trong nền...",
+    btnAddMoreVideos: "➕ Thêm video khác"
   },
   en: {
     addProjectBtn: "➕ Add New Video",
@@ -561,7 +571,16 @@ const I18N = {
     restoreVerConfirm: "Are you sure you want to restore version {0} (Voice {1}) as the current version?",
     restoreVerSuccess: "Successfully restored version {0}!",
     watchVerVideo: "Watch Video ({0})",
-    playingVerVideo: "Playing video for version {0}"
+    playingVerVideo: "Playing video for version {0}",
+    uploadQueueTitle: "📤 Uploading ({0})",
+    toastUploadQueued: "Added \"{0}\" to upload queue!",
+    toastUploadSuccessNamed: "Successfully uploaded: \"{0}\"!",
+    toastUploadCancelled: "Cancelled upload for \"{0}\"",
+    uploadProcessingServer: "Processing on server...",
+    retryUpload: "Retry",
+    cancelUpload: "Cancel upload",
+    uploadQueueMultipleNotice: "Uploading {0} video(s) in background...",
+    btnAddMoreVideos: "➕ Add another video"
   }
 };
 
@@ -1618,6 +1637,8 @@ async function deleteProject(p){
       dirty = false;
       drafts.clear();
       $('#workspace').innerHTML = `<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
+      ensureWorkspaceUploadsBar();
+      renderWorkspaceUploadsBar();
     }
     await refresh(true);
   }catch(err){
@@ -1627,7 +1648,10 @@ async function deleteProject(p){
 
 function render(){
   stopPreview();
-  const w=$('#workspace');w.replaceChildren(); const p=current;
+  const w=$('#workspace');w.replaceChildren();
+  ensureWorkspaceUploadsBar();
+  renderWorkspaceUploadsBar();
+  const p=current;
   const heading=el('div',undefined,'heading');
   const hLeft=el('div',undefined,'heading-left');
   const langPill = el('span', t('badge_' + p.source_language) || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
@@ -1954,6 +1978,8 @@ async function refresh(force=false){
       selected = null;
       current = null;
       $('#workspace').innerHTML = `<div class="empty"><span>◉</span><h2>${t('emptyTitle')}</h2><p>${t('emptyDesc')}</p></div>`;
+      ensureWorkspaceUploadsBar();
+      renderWorkspaceUploadsBar();
     } else {
       if(!selected || !all.some(x => x.id === selected)) selected = all[0].id;
       if(selected){
@@ -2332,42 +2358,15 @@ async function handleModalSubmit() {
 
     submitBtn.disabled = true;
     const progContainer = $('#modalUploadProgressContainer');
-    const progressEl = $('#modalUploadProgress');
-    const percentText = $('#modalUploadPercentText');
-    if (progContainer) progContainer.hidden = false;
-    if (progressEl) { progressEl.hidden = false; progressEl.value = 0; }
-    if (percentText) percentText.textContent = '0%';
+    if (progContainer) progContainer.hidden = true;
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/projects');
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        if (progressEl) progressEl.value = pct;
-        if (percentText) percentText.textContent = `${pct}%`;
-      }
-    };
-    xhr.onload = () => {
-      submitBtn.disabled = false;
-      if (progContainer) progContainer.hidden = true;
-      if (xhr.status < 300) {
-        modal.hidden = true;
-        const res = JSON.parse(xhr.responseText);
-        selected = res.id;
-        dirty = false;
-        drafts.clear();
-        refresh(true);
-        toast(t('toastUploadSuccess'));
-      } else {
-        toast(t('toastUploadErr') + xhr.responseText);
-      }
-    };
-    xhr.onerror = () => {
-      submitBtn.disabled = false;
-      if (progContainer) progContainer.hidden = true;
-      toast(t('toastUploadNetErr'));
-    };
-    xhr.send(form);
+    // Close modal immediately and reset file input so user can add another video in parallel
+    modal.hidden = true;
+    $('#modalFileInput').value = '';
+    submitBtn.disabled = false;
+
+    toast(t('toastUploadQueued', file.name));
+    startBackgroundUpload(file.name, file.size, form);
   } else {
     // Edit mode: PATCH
     if (!editingProjectId) return;
@@ -2405,6 +2404,268 @@ async function handleModalSubmit() {
     }
   }
 }
+
+function ensureWorkspaceUploadsBar() {
+  let bar = $('#workspaceUploadsBar');
+  if (!bar) {
+    bar = el('div', undefined, 'workspace-uploads-bar');
+    bar.id = 'workspaceUploadsBar';
+    bar.hidden = true;
+    const w = $('#workspace');
+    if (w && w.firstChild) {
+      w.insertBefore(bar, w.firstChild);
+    } else if (w) {
+      w.append(bar);
+    }
+  }
+  return bar;
+}
+
+function renderWorkspaceUploadsBar() {
+  const activeTasks = uploadQueue.filter(t => t.status === 'uploading' || t.status === 'processing');
+  const bar = ensureWorkspaceUploadsBar();
+  if (!bar) return;
+  if (!activeTasks.length) {
+    bar.hidden = true;
+    bar.replaceChildren();
+    return;
+  }
+  bar.hidden = false;
+  bar.replaceChildren();
+
+  const left = el('div', undefined, 'workspace-uploads-left');
+  const spinner = el('span', undefined, 'spinner');
+  const msg = el('span', t('uploadQueueMultipleNotice', activeTasks.length));
+  left.append(spinner, msg);
+
+  const addBtn = el('button', t('btnAddMoreVideos'), 'btn-sm btn-ghost');
+  addBtn.onclick = () => openProjectModal('create');
+
+  bar.append(left, addBtn);
+}
+
+function renderUploadQueue() {
+  const container = $('#uploadQueueContainer');
+  if (!container) return;
+  if (!uploadQueue.length) {
+    container.hidden = true;
+    container.replaceChildren();
+    return;
+  }
+  container.hidden = false;
+  container.replaceChildren();
+
+  const activeCount = uploadQueue.filter(t => t.status === 'uploading' || t.status === 'processing').length;
+  const header = el('div', undefined, 'upload-queue-header');
+  header.append(
+    el('span', t('uploadQueueTitle', activeCount || uploadQueue.length)),
+    el('small', `${uploadQueue.length} files`)
+  );
+  container.append(header);
+
+  for (const task of uploadQueue) {
+    const item = el('div', undefined, `upload-task-item ${task.status}`);
+    item.id = `upload-task-${task.id}`;
+
+    const top = el('div', undefined, 'upload-task-top');
+    const name = el('span', `📹 ${task.filename}`, 'upload-task-name');
+    name.title = task.filename;
+
+    let pctLabel = `${task.pct}%`;
+    if (task.status === 'completed') pctLabel = '✓ 100%';
+    else if (task.status === 'error') pctLabel = '❌';
+    else if (task.status === 'cancelled') pctLabel = '✕';
+    const pct = el('span', pctLabel, 'upload-task-pct');
+    top.append(name, pct);
+
+    const track = el('div', undefined, 'upload-task-bar-track');
+    const fill = el('div', undefined, 'upload-task-bar-fill');
+    fill.style.width = `${task.pct}%`;
+    track.append(fill);
+
+    const bottom = el('div', undefined, 'upload-task-bottom');
+    let bytesText = `${formatBytes(task.loadedBytes)} / ${formatBytes(task.totalBytes)}`;
+    if (task.status === 'uploading' && task.pct >= 99) {
+      bytesText = t('uploadProcessingServer');
+    } else if (task.status === 'completed') {
+      bytesText = formatBytes(task.totalBytes);
+    } else if (task.status === 'error') {
+      bytesText = task.error || 'Error';
+    }
+    const bytesSpan = el('span', bytesText, 'upload-task-bytes');
+
+    const actions = el('div', undefined, 'upload-task-actions');
+    if (task.status === 'error') {
+      const retryBtn = el('button', `🔄 ${t('retryUpload')}`, 'upload-task-retry-btn');
+      retryBtn.onclick = () => retryUploadTask(task.id);
+      actions.append(retryBtn);
+    }
+    if (task.status === 'uploading' || task.status === 'error') {
+      const cancelBtn = el('button', '✕', 'upload-task-cancel-btn');
+      cancelBtn.title = t('cancelUpload');
+      cancelBtn.onclick = () => cancelUploadTask(task.id);
+      actions.append(cancelBtn);
+    }
+
+    bottom.append(bytesSpan, actions);
+    item.append(top, track, bottom);
+    container.append(item);
+  }
+}
+
+function updateUploadTaskUI(task) {
+  const item = document.getElementById(`upload-task-${task.id}`);
+  if (!item) {
+    renderUploadQueue();
+    renderWorkspaceUploadsBar();
+    return;
+  }
+  if (!item.classList.contains(task.status)) {
+    renderUploadQueue();
+    renderWorkspaceUploadsBar();
+    return;
+  }
+  const pctEl = item.querySelector('.upload-task-pct');
+  if (pctEl) {
+    if (task.status === 'completed') pctEl.textContent = '✓ 100%';
+    else if (task.status === 'error') pctEl.textContent = '❌';
+    else if (task.status === 'cancelled') pctEl.textContent = '✕';
+    else pctEl.textContent = `${task.pct}%`;
+  }
+  const fillEl = item.querySelector('.upload-task-bar-fill');
+  if (fillEl) fillEl.style.width = `${task.pct}%`;
+  const bytesEl = item.querySelector('.upload-task-bytes');
+  if (bytesEl) {
+    if (task.status === 'uploading' && task.pct >= 99) {
+      bytesEl.textContent = t('uploadProcessingServer');
+    } else if (task.status === 'completed') {
+      bytesEl.textContent = formatBytes(task.totalBytes);
+    } else if (task.status === 'error') {
+      bytesEl.textContent = task.error || 'Error';
+    } else {
+      bytesEl.textContent = `${formatBytes(task.loadedBytes)} / ${formatBytes(task.totalBytes)}`;
+    }
+  }
+}
+
+function startBackgroundUpload(filename, fileSize, form) {
+  const task = {
+    id: 'upl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    filename,
+    fileSize,
+    status: 'uploading',
+    pct: 0,
+    loadedBytes: 0,
+    totalBytes: fileSize,
+    error: null,
+    xhr: null,
+    form,
+    createdAt: Date.now()
+  };
+  uploadQueue.unshift(task);
+  renderUploadQueue();
+  renderWorkspaceUploadsBar();
+  executeUploadXhr(task);
+}
+
+function executeUploadXhr(task) {
+  const xhr = new XMLHttpRequest();
+  task.xhr = xhr;
+  task.status = 'uploading';
+  task.error = null;
+  task.pct = 0;
+  task.loadedBytes = 0;
+  renderUploadQueue();
+  renderWorkspaceUploadsBar();
+
+  xhr.open('POST', '/api/projects');
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) {
+      task.loadedBytes = e.loaded;
+      task.totalBytes = e.total;
+      task.pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+    }
+    updateUploadTaskUI(task);
+  };
+
+  xhr.onload = async () => {
+    if (xhr.status < 300) {
+      task.pct = 100;
+      task.status = 'completed';
+      updateUploadTaskUI(task);
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (!selected) {
+          selected = res.id;
+          dirty = false;
+          drafts.clear();
+        }
+      } catch (_) {}
+      toast(t('toastUploadSuccessNamed', task.filename));
+      await refresh(true);
+      setTimeout(() => {
+        const idx = uploadQueue.findIndex(t => t.id === task.id);
+        if (idx !== -1) {
+          uploadQueue.splice(idx, 1);
+          renderUploadQueue();
+          renderWorkspaceUploadsBar();
+        }
+      }, 4000);
+    } else {
+      task.status = 'error';
+      task.error = xhr.responseText || 'Upload failed';
+      updateUploadTaskUI(task);
+      toast(t('toastUploadErr') + (xhr.responseText || ''));
+    }
+  };
+
+  xhr.onerror = () => {
+    if (task.status === 'cancelled') return;
+    task.status = 'error';
+    task.error = t('toastUploadNetErr');
+    updateUploadTaskUI(task);
+    toast(t('toastUploadNetErr'));
+  };
+
+  xhr.onabort = () => {
+    task.status = 'cancelled';
+    updateUploadTaskUI(task);
+    toast(t('toastUploadCancelled', task.filename));
+    setTimeout(() => {
+      const idx = uploadQueue.findIndex(t => t.id === task.id);
+      if (idx !== -1) {
+        uploadQueue.splice(idx, 1);
+        renderUploadQueue();
+        renderWorkspaceUploadsBar();
+      }
+    }, 2000);
+  };
+
+  xhr.send(task.form);
+}
+
+function cancelUploadTask(taskId) {
+  const task = uploadQueue.find(t => t.id === taskId);
+  if (!task) return;
+  if (task.xhr && (task.status === 'uploading' || task.status === 'processing')) {
+    task.status = 'cancelled';
+    task.xhr.abort();
+  } else {
+    const idx = uploadQueue.findIndex(t => t.id === taskId);
+    if (idx !== -1) uploadQueue.splice(idx, 1);
+    renderUploadQueue();
+    renderWorkspaceUploadsBar();
+  }
+}
+
+function retryUploadTask(taskId) {
+  const task = uploadQueue.find(t => t.id === taskId);
+  if (!task) return;
+  executeUploadXhr(task);
+}
+
+window.cancelUploadTask = cancelUploadTask;
+window.retryUploadTask = retryUploadTask;
 
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 
@@ -2790,6 +3051,8 @@ function setUiLanguage(lang){
   const modalSingleVoice = $('#modalSingleVoice');
   if(modalSingleVoice) populateVoiceSelect(modalSingleVoice, modalSingleVoice.value || 'Hải Đăng');
 
+  renderUploadQueue();
+  renderWorkspaceUploadsBar();
   if(current) render();
   refresh(true);
 }
