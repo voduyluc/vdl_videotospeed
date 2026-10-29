@@ -14,6 +14,35 @@ def extract(pid):
     tmp.replace(p / 'stt.wav')
 
 
+def build_atempo_filter(speed: float) -> str:
+    speed = max(0.2, min(5.0, speed))
+    filters = []
+    current = speed
+    while current > 2.0:
+        filters.append('atempo=2.0')
+        current /= 2.0
+    while current < 0.5:
+        filters.append('atempo=0.5')
+        current /= 0.5
+    filters.append(f'atempo={current:.6f}')
+    return ','.join(filters)
+
+
+def apply_fade_out(raw_bytes: bytes, fade_frames: int = 2400) -> bytes:
+    import array
+    samples = array.array('h')
+    samples.frombytes(raw_bytes)
+    total = len(samples)
+    actual_fade = min(total, fade_frames)
+    if actual_fade <= 0:
+        return raw_bytes
+    start = total - actual_fade
+    for idx in range(actual_fade):
+        factor = (actual_fade - idx) / actual_fade
+        samples[start + idx] = int(samples[start + idx] * factor)
+    return samples.tobytes()
+
+
 def export(pid):
     p = folder(pid)
     segments = read_json(p / 'segments.json')
@@ -22,7 +51,9 @@ def export(pid):
         raise ValueError('Incomplete TTS manifest')
     from app.core import db
     with db() as c:
-        total = c.execute('SELECT duration FROM projects WHERE id=?', (pid,)).fetchone()['duration']
+        row = c.execute('SELECT duration, auto_fit FROM projects WHERE id=?', (pid,)).fetchone()
+        total = row['duration']
+        auto_fit = row['auto_fit'] if row and 'auto_fit' in row.keys() else 1
     max_speed = float(os.getenv('MAX_SPEED', '1.18'))
     if not 1 <= max_speed <= 2:
         raise ValueError('MAX_SPEED must be between 1 and 2')
@@ -48,15 +79,21 @@ def export(pid):
             position = max(start, position)
             boundary = segments[i+1]['start'] if i+1 < len(segments) else total
             available = max(0.01, boundary - s['start'])
-            # atempo output length is approximate; leave a small boundary margin.
-            speed = min(max_speed, max(1, m['duration'] / max(0.01, available - 0.04)))
+            needed_speed = m['duration'] / max(0.01, available - 0.04)
+            if auto_fit:
+                speed = min(3.0, max(1.0, needed_speed))
+            else:
+                speed = min(max_speed, max(1.0, needed_speed))
+
             clip = p / 'fitted.wav'
+            atempo_str = build_atempo_filter(speed)
             run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', m['file'],
-                 '-af', f'atempo={speed:.6f}', '-ar', rate, '-ac', 1, '-c:a', 'pcm_s16le', clip])
+                 '-af', atempo_str, '-ar', rate, '-ac', 1, '-c:a', 'pcm_s16le', clip])
             with wave.open(str(clip), 'rb') as audio:
                 frames = audio.getnframes()
                 actual_dur = frames / rate
-                if frames > round(available * rate):
+                max_frames = round(available * rate)
+                if frames > max_frames:
                     warnings.append({
                         'id': s['id'],
                         'available_seconds': round(available, 2),
@@ -64,13 +101,23 @@ def export(pid):
                         'overflow_seconds': round(actual_dur - available, 3),
                         'audio_duration': round(m['duration'], 2),
                     })
-                while chunk := audio.readframes(rate):
-                    out.writeframesraw(chunk)
-                position += frames
+                    if auto_fit:
+                        raw_chunk = audio.readframes(max_frames)
+                        raw_chunk = apply_fade_out(raw_chunk)
+                        out.writeframesraw(raw_chunk)
+                        position += max_frames
+                    else:
+                        while chunk := audio.readframes(rate):
+                            out.writeframesraw(chunk)
+                        position += frames
+                else:
+                    while chunk := audio.readframes(rate):
+                        out.writeframesraw(chunk)
+                    position += frames
             update(pid, progress=f'Ghép {i+1}/{len(segments)}')
         silence(max(0, round(total * rate) - position))
     write_json(p / 'timing-warnings.json', warnings)
-    if warnings:
+    if warnings and not auto_fit:
         tmp.unlink(missing_ok=True)
         # Never publish a film with accumulated drift or silently truncate speech.
         raise RuntimeError(f'{len(warnings)} câu vượt thời lượng. Sửa/rút gọn câu được đánh dấu rồi tạo lại.')

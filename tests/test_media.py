@@ -41,6 +41,8 @@ class ExportTests(unittest.TestCase):
 
     def test_overflow_is_reported_without_publishing_drifting_audio(self):
         pid, p = self.prepare(6)
+        with core.db() as c:
+            c.execute('UPDATE projects SET auto_fit=0 WHERE id=?', (pid,))
         with self.assertRaisesRegex(RuntimeError, 'vượt thời lượng'):
             export(pid)
         self.assertFalse((p / 'narration.wav').exists())
@@ -48,3 +50,11 @@ class ExportTests(unittest.TestCase):
         warnings = core.read_json(p / 'timing-warnings.json')
         self.assertEqual(warnings[0]['id'], 's1')
         self.assertGreater(warnings[0]['overflow_seconds'], 0)
+
+    def test_export_with_auto_fit_compresses_and_succeeds(self):
+        pid, p = self.prepare(3)
+        export(pid)
+        self.assertTrue((p / 'narration.wav').exists())
+        self.assertTrue((p / 'narration.mp3').exists())
+        with wave.open(str(p / 'narration.wav'), 'rb') as audio:
+            self.assertAlmostEqual(audio.getnframes() / audio.getframerate(), 5, places=2)

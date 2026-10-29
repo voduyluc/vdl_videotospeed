@@ -108,20 +108,22 @@ class ApiTests(unittest.TestCase):
 
     def test_upload_with_voice_and_pause_review_settings(self):
         r = self.client.post('/api/projects', files={'file': ('movie.mp4', b'video', 'video/mp4')},
-                             data={'voice': 'Mai Anh', 'pause_review': '0'})
+                             data={'voice': 'Mai Anh', 'pause_review': '0', 'auto_fit': '1'})
         self.assertEqual(r.status_code, 200)
         pid = r.json()['id']
         proj = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(proj['voice'], 'Mai Anh')
         self.assertEqual(proj['pause_review'], 0)
+        self.assertEqual(proj['auto_fit'], 1)
 
     def test_patch_project_settings(self):
         pid = self.create()
-        r = self.client.patch(f'/api/projects/{pid}/settings', json={'voice': 'Trúc Ly', 'pause_review': False})
+        r = self.client.patch(f'/api/projects/{pid}/settings', json={'voice': 'Trúc Ly', 'pause_review': False, 'auto_fit': False})
         self.assertEqual(r.status_code, 200)
         proj = self.client.get(f'/api/projects/{pid}').json()
         self.assertEqual(proj['voice'], 'Trúc Ly')
         self.assertEqual(proj['pause_review'], 0)
+        self.assertEqual(proj['auto_fit'], 0)
 
     def test_empty_translation_cannot_generate(self):
         pid = self.create()

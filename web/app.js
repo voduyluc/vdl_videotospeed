@@ -323,8 +323,21 @@ function render(){
       toast(pauseCb.checked?'Đã bật: Sẽ dừng lại để bạn duyệt bản dịch':'Đã tắt: Sẽ tự động chạy từ đầu tới cuối');
     }catch(e){toast(e.message);pauseCb.checked=!pauseCb.checked;}
   };
-  pauseLabel.append(pauseCb,el('span','Dừng để duyệt bản dịch'));
+  pauseLabel.append(pauseCb,el('span','Dừng để duyệt'));
   tools.append(pauseLabel);
+
+  const autoFitLabel=el('label',undefined,'checkbox-label');
+  const autoFitCb=el('input');autoFitCb.type='checkbox';
+  autoFitCb.checked=(p.auto_fit!==0);
+  autoFitCb.onchange=async()=>{
+    try{
+      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_fit:autoFitCb.checked})});
+      p.auto_fit=autoFitCb.checked?1:0;
+      toast(autoFitCb.checked?'Đã bật: Tự động nén âm thanh vừa thời gian':'Đã tắt: Chế độ kiểm tra nghiêm ngặt');
+    }catch(e){toast(e.message);autoFitCb.checked=!autoFitCb.checked;}
+  };
+  autoFitLabel.append(autoFitCb,el('span','Tự nén âm thanh vừa thời gian'));
+  tools.append(autoFitLabel);
 
   const editable=['review','failed','completed'].includes(p.state);
   if(editable&&p.segments.length){
@@ -349,6 +362,35 @@ function render(){
     const warnTab = el('button', `⚠️ Câu vượt thời lượng (${warnCount})`, 'tab-btn warning-tab' + (filterWarnings ? ' active' : ''));
     if(warnCount === 0) warnTab.style.opacity = '0.6';
     filterTabs.append(warnTab);
+
+    if(warnCount > 0 && editable){
+      const trimBtn = el('button', `✂️ Tự cắt từ cho đủ (${warnCount} câu)`, 'tab-btn auto-trim-btn');
+      trimBtn.title = 'Tự động cắt ngắn số từ của các câu bị dài về giới hạn an toàn';
+      trimBtn.onclick = () => {
+        let trimmed = 0;
+        for(const s of p.segments){
+          const w = warningsMap.get(s.id);
+          if(!w) continue;
+          const curText = drafts.get(s.id) ?? s.translation ?? '';
+          const words = curText.trim().split(/\s+/).filter(Boolean);
+          const segDuration = Math.max(0.1, s.end - s.start);
+          const availableSec = w.available_seconds || segDuration;
+          const targetMax = Math.max(1, Math.round(availableSec * 3.5));
+          if(words.length > targetMax){
+            drafts.set(s.id, words.slice(0, targetMax).join(' '));
+            dirty = true;
+            trimmed++;
+          }
+        }
+        if(trimmed > 0){
+          toast(`Đã tự động rút gọn ${trimmed} câu về độ dài an toàn. Bấm "Lưu bản dịch" để xác nhận!`);
+          show();
+        } else {
+          toast('Tất cả các câu đã nằm trong độ dài an toàn.');
+        }
+      };
+      filterTabs.append(trimBtn);
+    }
     w.append(filterTabs);
 
     const pages=el('div',undefined,'pages'), prev=el('button','←','secondary'), next=el('button','→','secondary'), counter=el('span');
@@ -404,6 +446,8 @@ $('#upload').onclick=()=>{
   if(voiceEl&&voiceEl.value)form.append('voice',voiceEl.value);
   const pauseEl=$('#uploadPauseReview');
   form.append('pause_review',pauseEl&&pauseEl.checked?'1':'0');
+  const autoFitEl=$('#uploadAutoFit');
+  form.append('auto_fit',autoFitEl&&autoFitEl.checked?'1':'0');
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');
   $('#upload').disabled=true;$('#uploadProgress').hidden=false;
   xhr.upload.onprogress=e=>{if(e.lengthComputable)$('#uploadProgress').value=e.loaded/e.total*100;};

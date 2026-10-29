@@ -35,10 +35,12 @@ def init_db():
             step TEXT NOT NULL, progress TEXT NOT NULL DEFAULT '',
             error TEXT, duration REAL DEFAULT 0, created REAL NOT NULL,
             voice TEXT NOT NULL, cancel INTEGER DEFAULT 0,
-            pause_review INTEGER DEFAULT 1)''')
+            pause_review INTEGER DEFAULT 1, auto_fit INTEGER DEFAULT 1)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
+        if 'auto_fit' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN auto_fit INTEGER DEFAULT 1')
         c.execute("UPDATE projects SET state='queued' WHERE state='running'")
 
 

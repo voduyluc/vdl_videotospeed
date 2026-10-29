@@ -75,13 +75,14 @@ def projects():
 
 
 @app.post('/api/projects')
-def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1)):
+def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1), auto_fit: int = Form(1)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
     size = 0
     selected_voice = voice.strip() if voice and voice.strip() else os.getenv('TTS_VOICE', 'Hải Đăng')
     pause_flag = 1 if int(pause_review) else 0
+    auto_fit_flag = 1 if int(auto_fit) else 0
     try:
         with (p / 'source').open('wb') as out:
             while chunk := file.file.read(1024 * 1024):
@@ -92,9 +93,9 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
         if not size:
             raise HTTPException(400, 'Empty file')
         with db() as c:
-            c.execute('INSERT INTO projects(id,name,state,step,created,voice,pause_review) VALUES(?,?,?,?,?,?,?)',
+            c.execute('INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit) VALUES(?,?,?,?,?,?,?,?)',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', time.time(),
-                       selected_voice, pause_flag))
+                       selected_voice, pause_flag, auto_fit_flag))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -153,6 +154,7 @@ def edit(pid: str, body: Edit):
 class ProjectSettings(BaseModel):
     voice: str | None = Field(default=None, max_length=100)
     pause_review: bool | int | None = None
+    auto_fit: bool | int | None = None
 
 
 @app.patch('/api/projects/{pid}/settings')
@@ -163,6 +165,8 @@ def update_settings(pid: str, body: ProjectSettings):
         values['voice'] = body.voice.strip()
     if body.pause_review is not None:
         values['pause_review'] = 1 if body.pause_review else 0
+    if body.auto_fit is not None:
+        values['auto_fit'] = 1 if body.auto_fit else 0
     if values:
         update(pid, **values)
     return {'ok': True}

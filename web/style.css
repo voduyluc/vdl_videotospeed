@@ -26,6 +26,8 @@
 .tab-btn.warning-tab{border-color:#ffbc7a44;color:#ffbc7a}
 .tab-btn.warning-tab:hover{border-color:#ffbc7a;background:#2d1e12}
 .tab-btn.warning-tab.active{background:#ffbc7a;color:#2b1805;border-color:#ffbc7a}
+.tab-btn.auto-trim-btn{background:#321f14;color:#ffbc7a;border:1px dashed #ffbc7a;margin-left:auto}
+.tab-btn.auto-trim-btn:hover{background:#ffbc7a;color:#2b1805;border-style:solid}
 .segment.warning{border-left:4px solid #ffbc7a;background:#24191344;padding-left:14px;border-radius:0 8px 8px 0}
 .warning-badge{display:inline-block;background:#3d2214;color:#ffbc7a;border:1px solid #ffbc7a66;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;margin-top:6px}
 .timing-info{font-size:11px;color:var(--muted);margin-top:4px}
