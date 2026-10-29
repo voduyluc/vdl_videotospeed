@@ -15,5 +15,5 @@ if __name__ == '__main__':
     else:
         raise RuntimeError('Database not initialized; start vietvoice-worker first')
     import uvicorn
-    uvicorn.run('app.main:app', host=os.getenv('HOST', '127.0.0.1'),
+    uvicorn.run('app.main:app', host=os.getenv('HOST', '0.0.0.0'),
                 port=int(os.getenv('PORT', '8080')), workers=1)
