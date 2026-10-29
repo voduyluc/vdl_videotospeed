@@ -148,6 +148,56 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(proj_updated['voice_male'], 'Thiện Minh')
         self.assertEqual(proj_updated['voice_female'], 'Trúc Ly')
 
+    def test_settings_constraints_after_processing_started(self):
+        pid = self.create()
+        self.review(pid)  # Moves project to 'review' state at 'tts' step
+
+        # Changing source_language after processing started must fail with 400
+        r_lang = self.client.patch(f'/api/projects/{pid}/settings', json={'source_language': 'en'})
+        self.assertEqual(r_lang.status_code, 400)
+        self.assertIn('Không thể đổi ngôn ngữ nguồn', r_lang.json()['detail'])
+
+        # Changing multi_speaker after processing started must fail with 400
+        r_multi = self.client.patch(f'/api/projects/{pid}/settings', json={'multi_speaker': 1})
+        self.assertEqual(r_multi.status_code, 400)
+        self.assertIn('Không thể đổi chế độ nhận diện nhiều người nói', r_multi.json()['detail'])
+
+        # But changing voice, mix, or auto_fit settings is still allowed
+        r_voice = self.client.patch(f'/api/projects/{pid}/settings', json={
+            'voice': 'Thiện Minh',
+            'mix_background_gain': 0.35,
+            'auto_fit': False
+        })
+        self.assertEqual(r_voice.status_code, 200)
+
+    def test_reset_action_clears_files_and_restarts_step_1(self):
+        pid = self.create()
+        self.review(pid)
+        p_dir = core.folder(pid)
+        (p_dir / 'tts').mkdir(exist_ok=True)
+        (p_dir / 'tts' / 'dummy.wav').write_bytes(b'dummy')
+        (p_dir / 'narration.wav').write_bytes(b'narration')
+        (p_dir / 'stt.wav').write_bytes(b'stt')
+
+        self.assertTrue((p_dir / 'segments.json').exists())
+        self.assertTrue((p_dir / 'source').exists())
+
+        r = self.client.post(f'/api/projects/{pid}/reset')
+        self.assertEqual(r.status_code, 200)
+
+        # Source must be preserved
+        self.assertTrue((p_dir / 'source').exists())
+        # Intermediate files must be removed
+        self.assertFalse((p_dir / 'segments.json').exists())
+        self.assertFalse((p_dir / 'narration.wav').exists())
+        self.assertFalse((p_dir / 'stt.wav').exists())
+        self.assertFalse((p_dir / 'tts').exists())
+
+        # State must be reset to step 1 (extract, queued)
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['state'], 'queued')
+        self.assertEqual(proj['step'], 'extract')
+
     def test_empty_translation_cannot_generate(self):
         pid = self.create()
         segments = self.review(pid)

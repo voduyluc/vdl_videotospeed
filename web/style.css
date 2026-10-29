@@ -178,3 +178,6 @@
 .mix-quick-right{display:flex;align-items:center;gap:8px}
 .link-btn{background:transparent;border:0;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;padding:4px}
 .link-btn:hover{color:#fff}
+.modal-locked-hint{background:#3b2a14;color:#ffc069;border:1px solid #ffc06944;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px;line-height:1.4}
+.btn-warning{background:#382710;color:#ffc069;border:1px solid #ffc06955;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-warning:hover{background:#4d3616;border-color:#ffc069}

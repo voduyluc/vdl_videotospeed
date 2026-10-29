@@ -23,6 +23,11 @@ const I18N = {
     toggleSpeakerHint: "Bấm để đổi giọng Nam ⇄ Nữ cho câu này",
     settingsBtn: "⚙️ Cài đặt",
     saveSettingsBtn: "Lưu cài đặt",
+    resetProjectBtn: "🔄 Chạy lại từ đầu",
+    resetProjectTitle: "Hủy và xóa dữ liệu trung gian để chạy lại toàn bộ từ bước 1",
+    confirmReset: "Bạn có chắc muốn HỦY và CHẠY LẠI TỪ ĐẦU dự án \"{0}\"? Toàn bộ bản dịch và audio hiện tại sẽ bị xóa để xử lý lại từ bước 1.",
+    toastResetSuccess: "Đã reset dự án về bước 1 thành công!",
+    lockedSettingsHint: "🔒 Ngôn ngữ nguồn và Chế độ nhiều người nói không thể đổi sau khi đã bắt đầu xử lý. Hãy dùng nút 'Chạy lại từ đầu' nếu muốn thay đổi.",
     startProcessBtn: "Bắt đầu xử lý",
     cancelBtn: "Hủy",
     toastSettingsSaved: "Đã lưu cài đặt dự án thành công!",
@@ -236,6 +241,11 @@ const I18N = {
     toggleSpeakerHint: "Click to toggle Male ⇄ Female voice for this segment",
     settingsBtn: "⚙️ Settings",
     saveSettingsBtn: "Save Settings",
+    resetProjectBtn: "🔄 Reset & Re-run",
+    resetProjectTitle: "Cancel and clear intermediate data to re-run from step 1",
+    confirmReset: "Are you sure you want to RESET and RE-RUN project \"{0}\" from the beginning? All current translations and audio will be deleted and re-processed from step 1.",
+    toastResetSuccess: "Reset project to step 1 successfully!",
+    lockedSettingsHint: "🔒 Source language and Multi-speaker mode cannot be changed once processing has started. Use 'Reset & Re-run' if you wish to change them.",
     startProcessBtn: "Start Processing",
     cancelBtn: "Cancel",
     toastSettingsSaved: "Project settings saved successfully!",
@@ -1108,10 +1118,24 @@ function render(){
   const hActions=el('div',undefined,'heading-actions');
   const settingsBtn=el('button',t('settingsBtn'),'btn-settings secondary');
   settingsBtn.onclick=()=>openProjectModal('edit', p);
+  const resetBtn=el('button',t('resetProjectBtn'),'btn-warning secondary');
+  resetBtn.title=t('resetProjectTitle');
+  resetBtn.onclick=async()=>{
+    if(!confirm(t('confirmReset', p.name))) return;
+    try{
+      await api(`/projects/${p.id}/reset`, {method:'POST'});
+      dirty = false;
+      drafts.clear();
+      toast(t('toastResetSuccess'));
+      await refresh(true);
+    }catch(err){
+      toast(err.message);
+    }
+  };
   const delMainBtn=el('button',t('deleteProjectBtn'),'btn-danger secondary');
   delMainBtn.title=t('deleteProjectBtnTitle');
   delMainBtn.onclick=()=>deleteProject(p);
-  hActions.append(settingsBtn, delMainBtn);
+  hActions.append(settingsBtn, resetBtn, delMainBtn);
   heading.append(hActions);
   w.append(heading);
 
@@ -1333,6 +1357,10 @@ async function openProjectModal(mode, p = null) {
     $('#modalMultiSpeaker').checked = false;
     $('#modalMultiVoiceGroup').hidden = true;
     $('#modalSingleVoiceGroup').hidden = false;
+    $('#modalSourceLang').disabled = false;
+    $('#modalMultiSpeaker').disabled = false;
+    const lockedHint = $('#modalLockedHint');
+    if (lockedHint) lockedHint.hidden = true;
 
     populateGenderVoiceSelect($('#modalVoiceMale'), 'male', 'Hải Đăng');
     populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', 'Mai Anh');
@@ -1357,6 +1385,12 @@ async function openProjectModal(mode, p = null) {
     $('#projectModalTitle').textContent = t('projectModalTitleEdit');
     $('#modalFileGroup').hidden = true;
     $('#modalSourceLang').value = p.source_language || 'ko';
+
+    const isStarted = !(p.step === 'extract' && p.state === 'queued');
+    $('#modalSourceLang').disabled = isStarted;
+    $('#modalMultiSpeaker').disabled = isStarted;
+    const lockedHint = $('#modalLockedHint');
+    if (lockedHint) lockedHint.hidden = !isStarted;
 
     const isMulti = (p.multi_speaker === 1);
     $('#modalMultiSpeaker').checked = isMulti;

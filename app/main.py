@@ -216,7 +216,8 @@ class ProjectSettings(BaseModel):
 
 @app.patch('/api/projects/{pid}/settings')
 def update_settings(pid: str, body: ProjectSettings):
-    project(pid)
+    row = project(pid)
+    is_initial = (row['step'] == 'extract' and row['state'] == 'queued')
     values = {}
     if body.voice is not None and body.voice.strip():
         values['voice'] = body.voice.strip()
@@ -225,7 +226,10 @@ def update_settings(pid: str, body: ProjectSettings):
     if body.voice_female is not None and body.voice_female.strip():
         values['voice_female'] = body.voice_female.strip()
     if body.multi_speaker is not None:
-        values['multi_speaker'] = 1 if body.multi_speaker else 0
+        new_multi = 1 if body.multi_speaker else 0
+        if new_multi != row.get('multi_speaker', 0) and not is_initial:
+            raise HTTPException(400, 'Không thể đổi chế độ nhận diện nhiều người nói khi dự án đã bắt đầu xử lý. Hãy dùng nút "Chạy lại từ đầu" (Reset).')
+        values['multi_speaker'] = new_multi
     if body.pause_review is not None:
         values['pause_review'] = 1 if body.pause_review else 0
     if body.auto_fit is not None:
@@ -233,7 +237,10 @@ def update_settings(pid: str, body: ProjectSettings):
     if body.fit_duration is not None:
         values['fit_duration'] = 1 if body.fit_duration else 0
     if body.source_language is not None and body.source_language.strip().lower() in SUPPORTED_LANGUAGES:
-        values['source_language'] = body.source_language.strip().lower()
+        new_lang = body.source_language.strip().lower()
+        if new_lang != (row.get('source_language') or 'ko') and not is_initial:
+            raise HTTPException(400, 'Không thể đổi ngôn ngữ nguồn khi dự án đã bắt đầu xử lý. Hãy dùng nút "Chạy lại từ đầu" (Reset).')
+        values['source_language'] = new_lang
     if body.mix_background_gain is not None:
         values['mix_background_gain'] = max(0.0, min(3.0, float(body.mix_background_gain)))
     if body.mix_narration_gain is not None:
@@ -270,6 +277,28 @@ def action(pid: str, action: str):
         if row['state'] not in ('running', 'queued'):
             raise HTTPException(409, 'Project is not processing')
         update(pid, cancel=1)
+        return {'ok': True}
+    if action == 'reset':
+        if row['state'] == 'running':
+            update(pid, cancel=1)
+            for _ in range(15):
+                time.sleep(0.2)
+                with db() as c:
+                    r = c.execute('SELECT state FROM projects WHERE id=?', (pid,)).fetchone()
+                if not r or r['state'] != 'running':
+                    break
+        p_dir = folder(pid)
+        for item in p_dir.iterdir():
+            if item.name == 'source':
+                continue
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                try:
+                    item.unlink()
+                except Exception:
+                    pass
+        update(pid, state='queued', step='extract', cancel=0, error=None, progress='Chạy lại từ đầu')
         return {'ok': True}
     if action == 'remix':
         if not (folder(pid) / 'narration.wav').exists():
