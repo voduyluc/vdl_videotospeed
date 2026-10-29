@@ -837,7 +837,7 @@ function populateGenderVoiceSelect(select, targetGender, currentVoice){
 
 function updateAllOpenVoiceSelects(){
   const uv = $('#uploadVoice');
-  if(uv && current) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
+  if(uv) populateVoiceSelect(uv, uv.value || 'Hải Đăng');
   const single = $('#modalSingleVoice');
   if(single) populateVoiceSelect(single, single.value || 'Hải Đăng');
   const male = $('#modalVoiceMale');
@@ -845,13 +845,18 @@ function updateAllOpenVoiceSelects(){
   const female = $('#modalVoiceFemale');
   if(female) populateGenderVoiceSelect(female, 'female', female.value || 'Mai Anh');
   const detailVoice = $('#voice');
-  if(detailVoice && current) populateVoiceSelect(detailVoice, current.voice || detailVoice.value || 'Hải Đăng');
+  if(detailVoice && !dirty) populateVoiceSelect(detailVoice, (current && current.voice) || detailVoice.value || 'Hải Đăng');
 }
 
 function buildVoiceSelect(currentVoice){
   const select = el('select');
   select.id = 'voice';
   populateVoiceSelect(select, currentVoice);
+  if(!cachedVoicesAll.length){
+    fetchVoicesAll().then(()=>{
+      if(!dirty) populateVoiceSelect(select, (current && current.voice) || currentVoice);
+    });
+  }
   select.onchange = ()=>{
     stopPreview();
     dirty = true;
@@ -1921,7 +1926,10 @@ async function refresh(force=false){
   busy = true;
   busySince = now;
   try{
-    const all = await api('/projects');
+    const [all] = await Promise.all([
+      api('/projects'),
+      fetchVoicesAll()
+    ]);
     $('#projects').replaceChildren();
     for(const p of all){
       const row = el('div', undefined, 'project-row' + (p.id === selected ? ' active' : ''));
@@ -2541,7 +2549,7 @@ async function loadVoiceLibrary(){
   listEl.innerHTML = `<div class="usage-loading">${t('loadingVoices')}</div>`;
   try {
     const allVoices = await api('/voices/all');
-    await fetchVoicesAll();
+    cachedVoicesAll = allVoices;
     updateAllOpenVoiceSelects();
 
     const topVoices = allVoices.filter(v => v.is_top);
