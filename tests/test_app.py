@@ -487,6 +487,24 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(model.calls, 2)
         self.assertEqual(core.read_json(core.folder(pid) / 'tts-manifest.json')[0]['duration'], 1)
 
+    def test_runner_step_progression(self):
+        import app.runner as runner
+        pid = 'e' * 32
+        with core.db() as c:
+            c.execute('DELETE FROM projects')
+            c.execute('INSERT INTO projects(id,name,state,step,created,voice) VALUES(?,?,?,?,?,?)',
+                      (pid, 'test_runner', 'queued', 'extract', 0, 'Hải Đăng'))
+        def fake_execute(p, s):
+            runner.stop()
+            return True
+        with patch.object(runner, 'execute', side_effect=fake_execute):
+            runner.stopping = False
+            runner.main()
+        with core.db() as c:
+            row = dict(c.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone())
+        self.assertEqual(row['state'], 'queued')
+        self.assertEqual(row['step'], 'stt')
+
     def test_translation_markdown_and_thinking(self):
         from app.translate import parse_translation
         payload = '{"translations":[{"id":"s1","text":"Chào"}]}'

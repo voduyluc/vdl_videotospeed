@@ -106,10 +106,13 @@ def execute_batch(rows, step):
 
 
 def main():
-    import fcntl
-    from app.core import DATA
-    lock = (DATA / 'runner.lock').open('w')
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        import fcntl
+        from app.core import DATA
+        lock = (DATA / 'runner.lock').open('w')
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (ImportError, AttributeError, OSError):
+        pass
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     init_db()
@@ -159,9 +162,11 @@ def main():
                 update(pid, state='completed', progress='Đã tạo xong câu nghe thử')
             elif step == 'mix':
                 update(pid, state='completed', progress='Hoàn tất')
-            else:
-                next_step = steps[steps.index(step)+1]
+            elif step in pipeline_steps and pipeline_steps.index(step) + 1 < len(pipeline_steps):
+                next_step = pipeline_steps[pipeline_steps.index(step) + 1]
                 update(pid, state='queued', step=next_step)
+            else:
+                update(pid, state='completed', progress='Hoàn tất')
 
 
 if __name__ == '__main__':
