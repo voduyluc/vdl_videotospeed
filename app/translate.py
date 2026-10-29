@@ -128,9 +128,12 @@ def translate(pid, shared_client=None):
     segments = read_json(p / 'segments.json')
     glossary = (p / 'glossary.txt').read_text('utf-8') if (p / 'glossary.txt').exists() else ''
     with db() as c:
-        row = c.execute('SELECT source_language, fit_duration FROM projects WHERE id=?', (pid,)).fetchone()
+        row = c.execute('SELECT source_language, fit_duration, auto_trim_overflow, trim_threshold_pct, duration FROM projects WHERE id=?', (pid,)).fetchone()
     lang = row['source_language'] if row and 'source_language' in row.keys() and row['source_language'] else 'ko'
     fit_duration = row['fit_duration'] if row and 'fit_duration' in row.keys() and row['fit_duration'] is not None else 1
+    auto_trim = row['auto_trim_overflow'] if row and 'auto_trim_overflow' in row.keys() and row['auto_trim_overflow'] is not None else 0
+    trim_pct = row['trim_threshold_pct'] if row and 'trim_threshold_pct' in row.keys() and row['trim_threshold_pct'] is not None else 120
+    total = row['duration'] if row and 'duration' in row.keys() and row['duration'] is not None else 0
     lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật'}
     lang_label = lang_names.get(lang, 'tiếng nước ngoài')
     if fit_duration:
@@ -212,6 +215,19 @@ def translate(pid, shared_client=None):
                     if not s.get('translation'):
                         s['translation'] = s.get('source', '')
 
+            if auto_trim:
+                for idx_seg, s in enumerate(segments):
+                    trans = (s.get('translation') or '').strip()
+                    if not trans:
+                        continue
+                    boundary = segments[idx_seg + 1]['start'] if idx_seg + 1 < len(segments) else (total or s['end'])
+                    avail = max(0.5, boundary - s['start'])
+                    allowed_sec = avail * (trim_pct / 100.0)
+                    max_words = max(1, int(round(allowed_sec * 3.4)))
+                    words = trans.split()
+                    if len(words) > max_words:
+                        s['translation'] = ' '.join(words[:max_words])
+
             write_json(p / 'segments.json', segments)
             update(pid, progress=f'Dịch {min(start+8, len(segments))}/{len(segments)}')
 
@@ -223,9 +239,10 @@ def condense(pid, shared_client=None):
     if not segments:
         return
     with db() as c:
-        row = c.execute('SELECT duration, source_language FROM projects WHERE id=?', (pid,)).fetchone()
+        row = c.execute('SELECT duration, source_language, trim_threshold_pct FROM projects WHERE id=?', (pid,)).fetchone()
     total = row['duration'] if row and 'duration' in row.keys() else 0
     lang = row['source_language'] if row and 'source_language' in row.keys() and row['source_language'] else 'ko'
+    trim_pct = row['trim_threshold_pct'] if row and 'trim_threshold_pct' in row.keys() and row['trim_threshold_pct'] else 120
     lang_names = {'ko': 'tiếng Hàn', 'en': 'tiếng Anh', 'ja': 'tiếng Nhật'}
     lang_label = lang_names.get(lang, 'tiếng nước ngoài')
 
@@ -241,7 +258,7 @@ def condense(pid, shared_client=None):
         boundary = segments[i+1]['start'] if i+1 < len(segments) else (total or s['end'])
         w_info = warn_map.get(s['id'])
         avail = w_info['available_seconds'] if w_info and 'available_seconds' in w_info else max(0.5, boundary - s['start'])
-        safe_words = max(1, int(round(avail * 3.3)))
+        safe_words = max(1, int(round(avail * (trim_pct / 100.0) * 3.3)))
         cur_text = (s.get('translation') or '').strip()
         cur_words = len(cur_text.split())
 

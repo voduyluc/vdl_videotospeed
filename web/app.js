@@ -98,6 +98,10 @@ const I18N = {
     pauseBeforeMuxLabel: "⏸️ Dừng nghe thử audio trước khi ghép vào video",
     pauseBeforeMuxTitle: "Dừng lại sau khi phối âm để nghe thử audio trước khi ghép vào video",
     pauseBeforeMuxHint: "Sau khi phối âm xong sẽ dừng để bạn nghe thử; ưng ý mới bấm nút ghép vào video.",
+    autoTrimOverflowLabel: "✂️ AI tự cắt nếu vượt hơn:",
+    autoTrimOverflowTitle: "Tự động rút gọn các câu nói vượt quá tỷ lệ thời lượng quy định",
+    autoTrimOverflowHint: "Khi câu thoại có thời lượng vượt quá % chỉ định (ví dụ 120%), hệ thống sẽ tự động cắt/rút gọn số từ để thời lượng nói giảm xuống dưới ngưỡng an toàn.",
+    uploadProgressLabel: "📤 Đang tải video lên máy chủ...",
     audioReviewBannerTitle: "🎧 Đã phối âm xong — Hãy nghe thử trước khi ghép video!",
     audioReviewBannerDesc: "Audio thuyết minh & phối âm đã hoàn tất. Bạn có thể nghe thử ở trình phát bên dưới hoặc chỉnh âm lượng / remix. Khi ưng ý, bấm nút bên phải để xuất video hoàn chỉnh:",
     muxVideoBtn: "Ghép vào video gốc",
@@ -349,6 +353,10 @@ const I18N = {
     pauseBeforeMuxLabel: "⏸️ Pause to listen to audio before merging into video",
     pauseBeforeMuxTitle: "Pause after audio mixing to preview audio before muxing video",
     pauseBeforeMuxHint: "Stops after mixing so you can preview audio; click merge when satisfied.",
+    autoTrimOverflowLabel: "✂️ AI auto-trim if exceeding:",
+    autoTrimOverflowTitle: "Automatically trim sentences exceeding specified duration percentage",
+    autoTrimOverflowHint: "When a sentence duration exceeds the selected percentage (e.g. 120%), the system automatically trims words to bring spoken duration under safe threshold.",
+    uploadProgressLabel: "📤 Uploading video to server...",
     audioReviewBannerTitle: "🎧 Mixing complete — Preview audio before merging video!",
     audioReviewBannerDesc: "Audio narration and mixing are ready. Listen below or adjust volumes. When ready, click \"Merge into Video\" to produce the final video:",
     muxVideoBtn: "Merge into Video",
@@ -1538,7 +1546,7 @@ function render(){
       return r >= minRatio;
     }
 
-    let warnRatioThreshold = 1.0;
+    let warnRatioThreshold = (p.trim_threshold_pct && p.trim_threshold_pct > 100) ? (p.trim_threshold_pct / 100.0) : 1.0;
     const filterTabs = el('div', undefined, 'filter-tabs');
     const allTab = el('button', t('tabAll', p.segments.length), 'tab-btn' + (!filterWarnings ? ' active' : ''));
     filterTabs.append(allTab);
@@ -1558,6 +1566,9 @@ function render(){
     for (const ro of ratioOpts) {
       const opt = el('option', ro.text);
       opt.value = ro.val;
+      if (Math.abs(ro.val - warnRatioThreshold) < 0.01) {
+        opt.selected = true;
+      }
       ratioSelect.append(opt);
     }
     ratioSelect.onchange = () => {
@@ -1614,7 +1625,8 @@ function render(){
         const words = curText.trim().split(/\s+/).filter(Boolean);
         const segDuration = Math.max(0.1, s.end - s.start);
         const availableSec = (w && w.available_seconds) ? w.available_seconds : segDuration;
-        const targetMax = Math.max(1, Math.round(availableSec * 3.5));
+        const allowedSec = availableSec * Math.max(1.0, warnRatioThreshold);
+        const targetMax = Math.max(1, Math.round(allowedSec * 3.4));
         if (words.length > targetMax) {
           drafts.set(s.id, words.slice(0, targetMax).join(' '));
           dirty = true;
@@ -1770,23 +1782,59 @@ function updateVoiceOptionsVisibility(isMulti) {
   }
 }
 
-function saveVoicePreferences(isMulti, voiceMale, voiceFemale, singleVoice, sourceLang) {
-  try {
-    localStorage.setItem('vietvoice_pref_multi_speaker', isMulti ? '1' : '0');
-    if (voiceMale) localStorage.setItem('vietvoice_pref_voice_male', voiceMale);
-    if (voiceFemale) localStorage.setItem('vietvoice_pref_voice_female', voiceFemale);
-    if (singleVoice) localStorage.setItem('vietvoice_pref_voice', singleVoice);
-    if (sourceLang) localStorage.setItem('vietvoice_pref_source_lang', sourceLang);
-  } catch(e) {}
-}
+const SETTINGS_STORAGE_KEY = 'vietvoice_user_settings_v1';
 
-function loadVoicePreferences() {
-  return {
+function loadAllSettingsPreferences() {
+  const defaults = {
+    sourceLang: localStorage.getItem('vietvoice_pref_source_lang') || 'ko',
     isMulti: localStorage.getItem('vietvoice_pref_multi_speaker') === '1',
     voiceMale: localStorage.getItem('vietvoice_pref_voice_male') || 'Hải Đăng',
     voiceFemale: localStorage.getItem('vietvoice_pref_voice_female') || 'Mai Anh',
     singleVoice: localStorage.getItem('vietvoice_pref_voice') || 'Hải Đăng',
-    sourceLang: localStorage.getItem('vietvoice_pref_source_lang') || 'ko'
+    pauseReview: true,
+    fitDuration: true,
+    autoFit: true,
+    autoTrimOverflow: false,
+    trimThresholdPct: 120,
+    muxVideo: true,
+    pauseBeforeMux: true,
+    mixDucking: true,
+    mixBg: 25,
+    mixNarr: 100,
+    mixAtten: 16
+  };
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (raw) return { ...defaults, ...JSON.parse(raw) };
+  } catch(e) {}
+  return defaults;
+}
+
+function saveAllSettingsPreferences(updates) {
+  try {
+    const cur = loadAllSettingsPreferences();
+    const merged = { ...cur, ...updates };
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+    if (updates.sourceLang) localStorage.setItem('vietvoice_pref_source_lang', updates.sourceLang);
+    if (updates.isMulti !== undefined) localStorage.setItem('vietvoice_pref_multi_speaker', updates.isMulti ? '1' : '0');
+    if (updates.voiceMale) localStorage.setItem('vietvoice_pref_voice_male', updates.voiceMale);
+    if (updates.voiceFemale) localStorage.setItem('vietvoice_pref_voice_female', updates.voiceFemale);
+    if (updates.singleVoice) localStorage.setItem('vietvoice_pref_voice', updates.singleVoice);
+  } catch(e) {}
+}
+
+function saveVoicePreferences(isMulti, voiceMale, voiceFemale, singleVoice, sourceLang) {
+  saveAllSettingsPreferences({ isMulti: !!isMulti, voiceMale, voiceFemale, singleVoice, sourceLang });
+}
+
+function loadVoicePreferences() {
+  const all = loadAllSettingsPreferences();
+  return {
+    isMulti: all.isMulti,
+    voiceMale: all.voiceMale,
+    voiceFemale: all.voiceFemale,
+    singleVoice: all.singleVoice,
+    sourceLang: all.sourceLang
   };
 }
 
@@ -1800,60 +1848,96 @@ function initProjectModal() {
   const bgRange = $('#modalBgRange');
   const narrRange = $('#modalNarrRange');
   const attenRange = $('#modalAttenRange');
-
-  if (bgRange) bgRange.oninput = () => { $('#modalBgVal').textContent = `${bgRange.value}%`; };
-  if (narrRange) narrRange.oninput = () => { $('#modalNarrVal').textContent = `${narrRange.value}%`; };
-  if (attenRange) attenRange.oninput = () => { $('#modalAttenVal').textContent = `-${attenRange.value} dB`; };
-
   const muxVideoCb = $('#modalMuxVideo');
+  const pauseBeforeMuxCb = $('#modalPauseBeforeMux');
+  const autoTrimCb = $('#modalAutoTrimOverflow');
+  const autoTrimSelect = $('#modalAutoTrimThreshold');
+  const pauseRevCb = $('#modalPauseReview');
+  const fitDurCb = $('#modalFitDuration');
+  const autoFitCb = $('#modalAutoFit');
+  const mixDuckCb = $('#modalMixDucking');
+
+  if (bgRange) bgRange.oninput = () => {
+    $('#modalBgVal').textContent = `${bgRange.value}%`;
+    saveAllSettingsPreferences({ mixBg: parseFloat(bgRange.value) });
+  };
+  if (narrRange) narrRange.oninput = () => {
+    $('#modalNarrVal').textContent = `${narrRange.value}%`;
+    saveAllSettingsPreferences({ mixNarr: parseFloat(narrRange.value) });
+  };
+  if (attenRange) attenRange.oninput = () => {
+    $('#modalAttenVal').textContent = `-${attenRange.value} dB`;
+    saveAllSettingsPreferences({ mixAtten: parseFloat(attenRange.value) });
+  };
+
   if (muxVideoCb) {
     muxVideoCb.onchange = () => {
       const group = $('#modalPauseBeforeMuxGroup');
       if (group) group.style.display = muxVideoCb.checked ? 'block' : 'none';
+      saveAllSettingsPreferences({ muxVideo: muxVideoCb.checked });
     };
+  }
+  if (pauseBeforeMuxCb) {
+    pauseBeforeMuxCb.onchange = () => {
+      saveAllSettingsPreferences({ pauseBeforeMux: pauseBeforeMuxCb.checked });
+    };
+  }
+  if (autoTrimCb) {
+    autoTrimCb.onchange = () => {
+      saveAllSettingsPreferences({ autoTrimOverflow: autoTrimCb.checked });
+    };
+  }
+  if (autoTrimSelect) {
+    autoTrimSelect.onchange = () => {
+      saveAllSettingsPreferences({ trimThresholdPct: parseInt(autoTrimSelect.value, 10) || 120 });
+    };
+  }
+  if (pauseRevCb) {
+    pauseRevCb.onchange = () => saveAllSettingsPreferences({ pauseReview: pauseRevCb.checked });
+  }
+  if (fitDurCb) {
+    fitDurCb.onchange = () => saveAllSettingsPreferences({ fitDuration: fitDurCb.checked });
+  }
+  if (autoFitCb) {
+    autoFitCb.onchange = () => saveAllSettingsPreferences({ autoFit: autoFitCb.checked });
+  }
+  if (mixDuckCb) {
+    mixDuckCb.onchange = () => saveAllSettingsPreferences({ mixDucking: mixDuckCb.checked });
   }
 
   if (multiCb) {
     multiCb.onchange = () => {
       const isMulti = multiCb.checked;
       updateVoiceOptionsVisibility(isMulti);
-      try { localStorage.setItem('vietvoice_pref_multi_speaker', isMulti ? '1' : '0'); } catch(e) {}
+      saveAllSettingsPreferences({ isMulti });
     };
   }
 
   const voiceSingleEl = $('#modalSingleVoice');
   if (voiceSingleEl) {
     voiceSingleEl.onchange = () => {
-      if (voiceSingleEl.value) {
-        try { localStorage.setItem('vietvoice_pref_voice', voiceSingleEl.value); } catch(e) {}
-      }
+      if (voiceSingleEl.value) saveAllSettingsPreferences({ singleVoice: voiceSingleEl.value });
     };
   }
 
   const voiceMaleEl = $('#modalVoiceMale');
   if (voiceMaleEl) {
     voiceMaleEl.onchange = () => {
-      if (voiceMaleEl.value) {
-        try { localStorage.setItem('vietvoice_pref_voice_male', voiceMaleEl.value); } catch(e) {}
-      }
+      if (voiceMaleEl.value) saveAllSettingsPreferences({ voiceMale: voiceMaleEl.value });
     };
   }
 
   const voiceFemaleEl = $('#modalVoiceFemale');
   if (voiceFemaleEl) {
     voiceFemaleEl.onchange = () => {
-      if (voiceFemaleEl.value) {
-        try { localStorage.setItem('vietvoice_pref_voice_female', voiceFemaleEl.value); } catch(e) {}
-      }
+      if (voiceFemaleEl.value) saveAllSettingsPreferences({ voiceFemale: voiceFemaleEl.value });
     };
   }
 
   const langEl = $('#modalSourceLang');
   if (langEl) {
     langEl.onchange = () => {
-      if (langEl.value) {
-        try { localStorage.setItem('vietvoice_pref_source_lang', langEl.value); } catch(e) {}
-      }
+      if (langEl.value) saveAllSettingsPreferences({ sourceLang: langEl.value });
     };
   }
 
@@ -1877,8 +1961,11 @@ async function openProjectModal(mode, p = null) {
   const modal = $('#projectModal');
   await fetchVoicesAll();
 
+  const progContainer = $('#modalUploadProgressContainer');
+  if (progContainer) progContainer.hidden = true;
+
   if (mode === 'create') {
-    const prefs = loadVoicePreferences();
+    const prefs = loadAllSettingsPreferences();
     $('#projectModalTitle').textContent = t('projectModalTitleAdd');
     $('#modalFileGroup').hidden = false;
     $('#modalFileInput').value = '';
@@ -1894,23 +1981,25 @@ async function openProjectModal(mode, p = null) {
     populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', prefs.voiceFemale);
     populateVoiceSelect($('#modalSingleVoice'), prefs.singleVoice);
 
-    $('#modalPauseReview').checked = true;
-    $('#modalFitDuration').checked = true;
-    $('#modalAutoFit').checked = true;
-    $('#modalMuxVideo').checked = true;
-    $('#modalPauseBeforeMux').checked = true;
-    if ($('#modalPauseBeforeMuxGroup')) $('#modalPauseBeforeMuxGroup').style.display = 'block';
+    $('#modalPauseReview').checked = prefs.pauseReview;
+    $('#modalFitDuration').checked = prefs.fitDuration;
+    $('#modalAutoFit').checked = prefs.autoFit;
+    $('#modalAutoTrimOverflow').checked = prefs.autoTrimOverflow;
+    $('#modalAutoTrimThreshold').value = String(prefs.trimThresholdPct || 120);
 
-    $('#modalMixDucking').checked = true;
-    $('#modalBgRange').value = 25;
-    $('#modalBgVal').textContent = '25%';
-    $('#modalNarrRange').value = 100;
-    $('#modalNarrVal').textContent = '100%';
-    $('#modalAttenRange').value = 16;
-    $('#modalAttenVal').textContent = '-16 dB';
+    $('#modalMuxVideo').checked = prefs.muxVideo;
+    $('#modalPauseBeforeMux').checked = prefs.pauseBeforeMux;
+    if ($('#modalPauseBeforeMuxGroup')) $('#modalPauseBeforeMuxGroup').style.display = prefs.muxVideo ? 'block' : 'none';
+
+    $('#modalMixDucking').checked = prefs.mixDucking;
+    $('#modalBgRange').value = prefs.mixBg;
+    $('#modalBgVal').textContent = `${prefs.mixBg}%`;
+    $('#modalNarrRange').value = prefs.mixNarr;
+    $('#modalNarrVal').textContent = `${prefs.mixNarr}%`;
+    $('#modalAttenRange').value = prefs.mixAtten;
+    $('#modalAttenVal').textContent = `-${prefs.mixAtten} dB`;
 
     $('#projectModalSubmitBtn').textContent = t('startProcessBtn');
-    $('#modalUploadProgress').hidden = true;
   } else {
     // edit mode
     $('#projectModalTitle').textContent = t('projectModalTitleEdit');
@@ -1934,6 +2023,9 @@ async function openProjectModal(mode, p = null) {
     $('#modalPauseReview').checked = (p.pause_review !== 0);
     $('#modalFitDuration').checked = (p.fit_duration !== 0);
     $('#modalAutoFit').checked = (p.auto_fit !== 0);
+    $('#modalAutoTrimOverflow').checked = (p.auto_trim_overflow === 1);
+    $('#modalAutoTrimThreshold').value = String(p.trim_threshold_pct || 120);
+
     const muxFlag = (p.mux_video !== 0);
     $('#modalMuxVideo').checked = muxFlag;
     $('#modalPauseBeforeMux').checked = (p.pause_before_mux !== 0);
@@ -1953,7 +2045,6 @@ async function openProjectModal(mode, p = null) {
     $('#modalAttenVal').textContent = `-${atten} dB`;
 
     $('#projectModalSubmitBtn').textContent = t('saveSettingsBtn');
-    $('#modalUploadProgress').hidden = true;
   }
 
   modal.hidden = false;
@@ -1969,6 +2060,8 @@ async function handleModalSubmit() {
   const pauseReview = $('#modalPauseReview').checked;
   const fitDuration = $('#modalFitDuration').checked;
   const autoFit = $('#modalAutoFit').checked;
+  const autoTrimOverflow = $('#modalAutoTrimOverflow').checked ? 1 : 0;
+  const trimThresholdPct = parseInt($('#modalAutoTrimThreshold').value, 10) || 120;
   const muxVideo = $('#modalMuxVideo').checked ? 1 : 0;
   const pauseBeforeMux = $('#modalPauseBeforeMux').checked ? 1 : 0;
   const mixDucking = $('#modalMixDucking').checked ? 1 : 0;
@@ -1976,7 +2069,24 @@ async function handleModalSubmit() {
   const mixNarr = parseFloat($('#modalNarrRange').value) / 100.0;
   const mixAtten = parseFloat($('#modalAttenRange').value);
 
-  saveVoicePreferences(isMulti, voiceMale, voiceFemale, singleVoice, $('#modalSourceLang').value);
+  saveAllSettingsPreferences({
+    isMulti: !!isMulti,
+    voiceMale,
+    voiceFemale,
+    singleVoice,
+    sourceLang: $('#modalSourceLang').value || 'ko',
+    pauseReview,
+    fitDuration,
+    autoFit,
+    autoTrimOverflow: !!autoTrimOverflow,
+    trimThresholdPct,
+    muxVideo: !!muxVideo,
+    pauseBeforeMux: !!pauseBeforeMux,
+    mixDucking: !!mixDucking,
+    mixBg: parseFloat($('#modalBgRange').value),
+    mixNarr: parseFloat($('#modalNarrRange').value),
+    mixAtten
+  });
 
   if (projectModalMode === 'create') {
     const file = $('#modalFileInput').files[0];
@@ -1994,6 +2104,8 @@ async function handleModalSubmit() {
     form.append('pause_review', pauseReview ? '1' : '0');
     form.append('fit_duration', fitDuration ? '1' : '0');
     form.append('auto_fit', autoFit ? '1' : '0');
+    form.append('auto_trim_overflow', String(autoTrimOverflow));
+    form.append('trim_threshold_pct', String(trimThresholdPct));
     form.append('mux_video', String(muxVideo));
     form.append('pause_before_mux', String(pauseBeforeMux));
     form.append('mix_ducking', String(mixDucking));
@@ -2002,18 +2114,25 @@ async function handleModalSubmit() {
     form.append('mix_ducking_attenuation', String(mixAtten));
 
     submitBtn.disabled = true;
+    const progContainer = $('#modalUploadProgressContainer');
     const progressEl = $('#modalUploadProgress');
-    progressEl.hidden = false;
-    progressEl.value = 0;
+    const percentText = $('#modalUploadPercentText');
+    if (progContainer) progContainer.hidden = false;
+    if (progressEl) { progressEl.hidden = false; progressEl.value = 0; }
+    if (percentText) percentText.textContent = '0%';
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/projects');
     xhr.upload.onprogress = e => {
-      if (e.lengthComputable) progressEl.value = (e.loaded / e.total) * 100;
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        if (progressEl) progressEl.value = pct;
+        if (percentText) percentText.textContent = `${pct}%`;
+      }
     };
     xhr.onload = () => {
       submitBtn.disabled = false;
-      progressEl.hidden = true;
+      if (progContainer) progContainer.hidden = true;
       if (xhr.status < 300) {
         modal.hidden = true;
         const res = JSON.parse(xhr.responseText);
@@ -2028,7 +2147,7 @@ async function handleModalSubmit() {
     };
     xhr.onerror = () => {
       submitBtn.disabled = false;
-      progressEl.hidden = true;
+      if (progContainer) progContainer.hidden = true;
       toast(t('toastUploadNetErr'));
     };
     xhr.send(form);
@@ -2045,6 +2164,8 @@ async function handleModalSubmit() {
         pause_review: pauseReview,
         fit_duration: fitDuration,
         auto_fit: autoFit,
+        auto_trim_overflow: autoTrimOverflow,
+        trim_threshold_pct: trimThresholdPct,
         mix_ducking: mixDucking,
         mix_background_gain: mixBg,
         mix_narration_gain: mixNarr,

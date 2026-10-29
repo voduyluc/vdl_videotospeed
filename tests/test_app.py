@@ -240,6 +240,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(proj_muxing['step'], 'mux')
         self.assertEqual(proj_muxing['state'], 'queued')
 
+    def test_auto_trim_overflow_settings(self):
+        r = self.client.post('/api/projects', files={'file': ('trim.mp4', b'video', 'video/mp4')},
+                             data={'auto_trim_overflow': '1', 'trim_threshold_pct': '130'})
+        self.assertEqual(r.status_code, 200)
+        pid = r.json()['id']
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['auto_trim_overflow'], 1)
+        self.assertEqual(proj['trim_threshold_pct'], 130)
+
+        r_patch = self.client.patch(f'/api/projects/{pid}/settings', json={
+            'auto_trim_overflow': False,
+            'trim_threshold_pct': 110
+        })
+        self.assertEqual(r_patch.status_code, 200)
+        proj_updated = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_updated['auto_trim_overflow'], 0)
+        self.assertEqual(proj_updated['trim_threshold_pct'], 110)
+
     def test_empty_translation_cannot_generate(self):
         pid = self.create()
         segments = self.review(pid)
@@ -799,6 +817,33 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(len(called_cmds) > 0)
         self.assertIn('-c:v', called_cmds[0])
         self.assertIn('copy', called_cmds[0])
+
+    def test_translate_auto_trim_overflow(self):
+        from app.translate import translate
+        pid = 'e' * 32
+        # Segment duration: 1.0s. At 100%, allowed_sec = 1.0, max_words = round(1.0 * 3.4) = 3 words.
+        segments = [{'id': 's1', 'start': 0.0, 'end': 1.0, 'source': 'Hello long phrase', 'translation': ''}]
+        core.write_json(core.folder(pid) / 'segments.json', segments)
+        with core.db() as conn:
+            conn.execute("INSERT OR REPLACE INTO projects (id, name, state, step, created, voice, auto_trim_overflow, trim_threshold_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         (pid, 'test.mp4', 'running', 'translate', 1700000000.0, 'Mai Anh', 1, 100))
+
+        class MockResult:
+            def raise_for_status(self): pass
+            def json(self):
+                # 8 words
+                return {'choices': [{'message': {'content': '{"translations":[{"id":"s1","text":"Một hai ba bốn năm sáu bảy tám"}]}'}}]}
+
+        class MockEngine:
+            def post(self, *args, **kwargs):
+                return MockResult()
+
+        translate(pid, MockEngine())
+        res = core.read_json(core.folder(pid) / 'segments.json')
+        # Should be auto-trimmed down to 3 words
+        words = res[0]['translation'].split()
+        self.assertLessEqual(len(words), 3)
+        self.assertEqual(res[0]['translation'], 'Một hai ba')
 
 
 if __name__ == '__main__':

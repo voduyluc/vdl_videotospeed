@@ -119,7 +119,8 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
            voice_male: str = Form(None), voice_female: str = Form(None),
            mix_background_gain: float = Form(0.25), mix_narration_gain: float = Form(1.0),
            mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0),
-           mux_video: int = Form(1), pause_before_mux: int = Form(1)):
+           mux_video: int = Form(1), pause_before_mux: int = Form(1),
+           auto_trim_overflow: int = Form(0), trim_threshold_pct: int = Form(120)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
@@ -133,6 +134,8 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
     multi_flag = 1 if int(multi_speaker) else 0
     mux_video_flag = 1 if int(mux_video) else 0
     pause_mux_flag = 1 if int(pause_before_mux) else 0
+    trim_overflow_flag = 1 if int(auto_trim_overflow) else 0
+    trim_pct_val = max(100, min(200, int(trim_threshold_pct)))
     src_lang = (source_language or 'ko').strip().lower()
     if src_lang not in SUPPORTED_LANGUAGES:
         raise HTTPException(400, f'Ngôn ngữ nguồn không hợp lệ. Chỉ hỗ trợ: {", ".join(SUPPORTED_LANGUAGES)}')
@@ -154,12 +157,12 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
                         source_language,fit_duration,multi_speaker,voice_male,voice_female,
                         mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at,
-                        mux_video,pause_before_mux)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        mux_video,pause_before_mux,auto_trim_overflow,trim_threshold_pct)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', now_ts,
                        selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
                        multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts,
-                       mux_video_flag, pause_mux_flag))
+                       mux_video_flag, pause_mux_flag, trim_overflow_flag, trim_pct_val))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -177,6 +180,8 @@ def detail(pid: str):
     result['multi_speaker'] = result.get('multi_speaker', 0)
     result['mux_video'] = result.get('mux_video', 1)
     result['pause_before_mux'] = result.get('pause_before_mux', 1)
+    result['auto_trim_overflow'] = result.get('auto_trim_overflow', 0)
+    result['trim_threshold_pct'] = result.get('trim_threshold_pct', 120)
     result['voice_male'] = result.get('voice_male', 'Hải Đăng')
     result['voice_female'] = result.get('voice_female', 'Mai Anh')
     result['segments'] = read_json(folder(pid) / 'segments.json', [])
@@ -241,6 +246,8 @@ class ProjectSettings(BaseModel):
     mix_ducking_attenuation: float | None = None
     mux_video: bool | int | None = None
     pause_before_mux: bool | int | None = None
+    auto_trim_overflow: bool | int | None = None
+    trim_threshold_pct: int | None = None
 
 
 @app.patch('/api/projects/{pid}/settings')
@@ -282,6 +289,10 @@ def update_settings(pid: str, body: ProjectSettings):
         values['mux_video'] = 1 if body.mux_video else 0
     if body.pause_before_mux is not None:
         values['pause_before_mux'] = 1 if body.pause_before_mux else 0
+    if body.auto_trim_overflow is not None:
+        values['auto_trim_overflow'] = 1 if body.auto_trim_overflow else 0
+    if body.trim_threshold_pct is not None:
+        values['trim_threshold_pct'] = max(100, min(200, int(body.trim_threshold_pct)))
     if values:
         update(pid, **values)
     return {'ok': True}

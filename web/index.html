@@ -51,6 +51,13 @@
         <label for="modalFileInput" data-i18n="selectVideoLabel">Chọn file video:</label>
         <p class="hint-text" data-i18n="uploadDesc">Hỗ trợ MP4, MKV, MOV, WebM... Hệ thống sử dụng track audio đầu tiên.</p>
         <input type="file" id="modalFileInput" accept="video/*,.mkv,.mov,.webm">
+        <div id="modalUploadProgressContainer" style="margin-top: 10px; background: #131b23; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;" hidden>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-bottom:6px; color:var(--accent); font-weight:600;">
+            <span data-i18n="uploadProgressLabel">📤 Đang tải video lên máy chủ...</span>
+            <span id="modalUploadPercentText" style="font-size:13px; font-weight:700;">0%</span>
+          </div>
+          <progress id="modalUploadProgress" max="100" value="0" style="width: 100%; height: 8px; border-radius: 4px; accent-color: var(--accent);"></progress>
+        </div>
       </div>
 
       <!-- Locked settings hint in Edit mode -->
@@ -115,6 +122,22 @@
         </label>
         <small class="hint-text" data-i18n="autoFitHint">Tự nén tốc độ để vừa khung thời gian, tránh lỗi.</small>
 
+        <div class="auto-trim-setting-row" style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <label class="checkbox-label" data-i18n-title="autoTrimOverflowTitle" style="margin-bottom: 0;">
+            <input type="checkbox" id="modalAutoTrimOverflow">
+            <span data-i18n="autoTrimOverflowLabel">✂️ AI tự cắt nếu vượt hơn:</span>
+          </label>
+          <select id="modalAutoTrimThreshold" style="width: auto; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 13px; background: #19222c; color: var(--text); border: 1px solid var(--line);">
+            <option value="100">100%</option>
+            <option value="110">110%</option>
+            <option value="120" selected>120%</option>
+            <option value="130">130%</option>
+            <option value="140">140%</option>
+            <option value="150">150%</option>
+          </select>
+        </div>
+        <small class="hint-text" data-i18n="autoTrimOverflowHint">Tự động rút gọn câu có thời lượng vượt quá % chỉ định để thời lượng nói giảm xuống dưới ngưỡng an toàn.</small>
+
         <label class="checkbox-label" data-i18n-title="muxVideoTitle" style="margin-top: 10px;">
           <input type="checkbox" id="modalMuxVideo" checked>
           <span data-i18n="muxVideoLabel">🎬 Ghép audio vào video gốc (Thay audio gốc)</span>
@@ -156,8 +179,6 @@
           </div>
         </div>
       </details>
-
-      <progress id="modalUploadProgress" max="100" value="0" hidden></progress>
     </div>
     <div class="modal-footer">
       <button id="projectModalCancelBtn" class="secondary" data-i18n="cancelBtn">Hủy</button>
