@@ -96,18 +96,28 @@ def projects():
 @app.post('/api/projects')
 def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1),
            auto_fit: int = Form(1), source_language: str = Form('ko'),
-           fit_duration: int = Form(1)):
+           fit_duration: int = Form(1), multi_speaker: int = Form(0),
+           voice_male: str = Form(None), voice_female: str = Form(None),
+           mix_background_gain: float = Form(0.25), mix_narration_gain: float = Form(1.0),
+           mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0)):
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
     size = 0
     selected_voice = voice.strip() if voice and voice.strip() else os.getenv('TTS_VOICE', 'Hải Đăng')
+    v_male = voice_male.strip() if voice_male and voice_male.strip() else 'Hải Đăng'
+    v_female = voice_female.strip() if voice_female and voice_female.strip() else 'Mai Anh'
     pause_flag = 1 if int(pause_review) else 0
     auto_fit_flag = 1 if int(auto_fit) else 0
     fit_flag = 1 if int(fit_duration) else 0
+    multi_flag = 1 if int(multi_speaker) else 0
     src_lang = (source_language or 'ko').strip().lower()
     if src_lang not in SUPPORTED_LANGUAGES:
         raise HTTPException(400, f'Ngôn ngữ nguồn không hợp lệ. Chỉ hỗ trợ: {", ".join(SUPPORTED_LANGUAGES)}')
+    bg_gain = max(0.0, min(3.0, float(mix_background_gain)))
+    narr_gain = max(0.0, min(3.0, float(mix_narration_gain)))
+    duck_flag = 1 if int(mix_ducking) else 0
+    duck_atten = max(2.0, min(30.0, float(mix_ducking_attenuation)))
     try:
         with (p / 'source').open('wb') as out:
             while chunk := file.file.read(1024 * 1024):
@@ -118,9 +128,13 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
         if not size:
             raise HTTPException(400, 'Empty file')
         with db() as c:
-            c.execute('INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,source_language,fit_duration) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
+                        source_language,fit_duration,multi_speaker,voice_male,voice_female,
+                        mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', time.time(),
-                       selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag))
+                       selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
+                       multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -135,6 +149,9 @@ def detail(pid: str):
     src_lang = result.get('source_language') or 'ko'
     result['source_language'] = src_lang
     result['fit_duration'] = result.get('fit_duration', 1)
+    result['multi_speaker'] = result.get('multi_speaker', 0)
+    result['voice_male'] = result.get('voice_male', 'Hải Đăng')
+    result['voice_female'] = result.get('voice_female', 'Mai Anh')
     result['segments'] = read_json(folder(pid) / 'segments.json', [])
     result['warnings'] = read_json(folder(pid) / 'timing-warnings.json', [])
     result['exports'] = [n for n in ('mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', f'{src_lang}.srt', 'vi.srt')
@@ -152,6 +169,9 @@ class Segment(BaseModel):
     end: float = Field(gt=0)
     source: str
     translation: str = Field(max_length=4000)
+    gender: str | None = None
+    speaker: str | None = None
+    voice: str | None = None
 
 
 class Edit(BaseModel):
@@ -181,9 +201,13 @@ def edit(pid: str, body: Edit):
 
 class ProjectSettings(BaseModel):
     voice: str | None = Field(default=None, max_length=100)
+    voice_male: str | None = Field(default=None, max_length=100)
+    voice_female: str | None = Field(default=None, max_length=100)
+    multi_speaker: bool | int | None = None
     pause_review: bool | int | None = None
     auto_fit: bool | int | None = None
     fit_duration: bool | int | None = None
+    source_language: str | None = None
     mix_background_gain: float | None = None
     mix_narration_gain: float | None = None
     mix_ducking: bool | int | None = None
@@ -196,12 +220,20 @@ def update_settings(pid: str, body: ProjectSettings):
     values = {}
     if body.voice is not None and body.voice.strip():
         values['voice'] = body.voice.strip()
+    if body.voice_male is not None and body.voice_male.strip():
+        values['voice_male'] = body.voice_male.strip()
+    if body.voice_female is not None and body.voice_female.strip():
+        values['voice_female'] = body.voice_female.strip()
+    if body.multi_speaker is not None:
+        values['multi_speaker'] = 1 if body.multi_speaker else 0
     if body.pause_review is not None:
         values['pause_review'] = 1 if body.pause_review else 0
     if body.auto_fit is not None:
         values['auto_fit'] = 1 if body.auto_fit else 0
     if body.fit_duration is not None:
         values['fit_duration'] = 1 if body.fit_duration else 0
+    if body.source_language is not None and body.source_language.strip().lower() in SUPPORTED_LANGUAGES:
+        values['source_language'] = body.source_language.strip().lower()
     if body.mix_background_gain is not None:
         values['mix_background_gain'] = max(0.0, min(3.0, float(body.mix_background_gain)))
     if body.mix_narration_gain is not None:

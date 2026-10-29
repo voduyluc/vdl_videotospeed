@@ -8,6 +8,26 @@ let currentLang = localStorage.getItem('vietvoice_ui_lang') || 'vi';
 
 const I18N = {
   vi: {
+    addProjectBtn: "➕ Thêm Video Mới",
+    projectModalTitleAdd: "➕ Thêm Video Mới & Thiết Lập",
+    projectModalTitleEdit: "⚙️ Cài Đặt Dự Án",
+    selectVideoLabel: "Chọn file video:",
+    multiSpeakerLabel: "👥 Nhận diện nhiều người nói (Tự gán giọng Nam / Nữ)",
+    multiSpeakerHint: "Tự động phân tích cao độ giọng nói để nhận diện giọng Nam / Nữ trong video phỏng vấn, đối thoại.",
+    multiSpeakerTitle: "Tự động nhận diện nhiều người nói và gán giọng Nam/Nữ",
+    voiceMaleLabel: "👨 Giọng Nam:",
+    voiceFemaleLabel: "👩 Giọng Nữ:",
+    badgeMultiSpeaker: "👥 Đa giọng Nam/Nữ",
+    speakerMale: "👨 Nam",
+    speakerFemale: "👩 Nữ",
+    toggleSpeakerHint: "Bấm để đổi giọng Nam ⇄ Nữ cho câu này",
+    settingsBtn: "⚙️ Cài đặt",
+    saveSettingsBtn: "Lưu cài đặt",
+    startProcessBtn: "Bắt đầu xử lý",
+    cancelBtn: "Hủy",
+    toastSettingsSaved: "Đã lưu cài đặt dự án thành công!",
+    mixSettingsSummary: "🎛️ Thiết lập phối âm nền & Ducking",
+    btnMixSettings: "⚙️ Cài đặt âm lượng",
     headerSubtitle: "Video tiếng Hàn, Anh, Nhật → thuyết minh tiếng Việt · Local GPU",
     voiceLibTitle: "Quản lý giọng nhân bản (Voice Cloning)",
     voiceLibBtn: "🎙️ Giọng Clone",
@@ -201,6 +221,26 @@ const I18N = {
     badge_ja: "🇯🇵 Tiếng Nhật"
   },
   en: {
+    addProjectBtn: "➕ Add New Video",
+    projectModalTitleAdd: "➕ Add New Video & Configure",
+    projectModalTitleEdit: "⚙️ Project Settings",
+    selectVideoLabel: "Select video file:",
+    multiSpeakerLabel: "👥 Multi-speaker detection (Auto-assign Male / Female voices)",
+    multiSpeakerHint: "Automatically analyzes pitch to classify Male / Female speakers in interviews or dialogues.",
+    multiSpeakerTitle: "Auto-detect multi-speaker and assign Male/Female voices",
+    voiceMaleLabel: "👨 Male Voice:",
+    voiceFemaleLabel: "👩 Female Voice:",
+    badgeMultiSpeaker: "👥 Dual Voices",
+    speakerMale: "👨 Male",
+    speakerFemale: "👩 Female",
+    toggleSpeakerHint: "Click to toggle Male ⇄ Female voice for this segment",
+    settingsBtn: "⚙️ Settings",
+    saveSettingsBtn: "Save Settings",
+    startProcessBtn: "Start Processing",
+    cancelBtn: "Cancel",
+    toastSettingsSaved: "Project settings saved successfully!",
+    mixSettingsSummary: "🎛️ Background Audio & Ducking Settings",
+    btnMixSettings: "⚙️ Volume Settings",
     headerSubtitle: "Korean, English, Japanese Video → Vietnamese Dubbing · Local GPU",
     voiceLibTitle: "Manage Cloned Voices (Voice Cloning)",
     voiceLibBtn: "🎙️ Cloned Voices",
@@ -495,7 +535,7 @@ function stopPreview(){
 async function playSnippet(segment,button){
   if(previewButton===button){stopPreview();return;}
   stopPreview();
-  if((drafts.get(segment.id)??segment.translation)!==segment.translation || ($('#voice')&&$('#voice').value!==current.voice)){
+  if((drafts.get(segment.id)??segment.translation)!==segment.translation || dirty){
     toast(t('toastUnsavedSnippet'));return;
   }
   const request=previewRequest;
@@ -593,6 +633,58 @@ function populateVoiceSelect(select, currentVoice){
   }
 }
 
+const VOICE_GENDER_MAP = {
+  "Hải Đăng": "male", "Thiện Minh": "male", "Quang Sơn": "male",
+  "Thiền Tâm Đức": "male", "Adam bựa": "male", "Minh Đức": "male",
+  "Phạm Tuyên": "male", "Xuân Vĩnh": "male", "Thanh Bình": "male",
+  "Quốc Tuấn": "male", "Thái Sơn": "male", "Minh Triết": "male",
+  "Đức Trí": "male", "Adam": "male",
+  "Mai Anh": "female", "Trúc Ly": "female", "Thùy Dung": "female",
+  "Ngọc Huyền": "female", "Ngọc Trân": "female", "Ngọc Linh": "female",
+  "Đoan Trang": "female", "Quỳnh Anh": "female", "Thục Đoan": "female",
+  "Mỹ Duyên": "female", "Kim Thanh": "female"
+};
+
+function populateGenderVoiceSelect(select, targetGender, currentVoice){
+  select.replaceChildren();
+  const list = cachedVoicesAll.length ? cachedVoicesAll : VOICES.flatMap(g => g.items.map(v => ({...v, group: g.group})));
+  const filtered = list.filter(v => {
+    const isClone = (v.group && v.group.includes('Clone')) || (v.id && String(v.id).startsWith('clone_'));
+    if (isClone) return true;
+    const g = VOICE_GENDER_MAP[v.id];
+    return targetGender ? (g === targetGender) : true;
+  });
+
+  const groups = {};
+  for(const v of filtered){
+    const grpName = v.group || 'Giọng khác';
+    if(!groups[grpName]) groups[grpName] = [];
+    groups[grpName].push(v);
+  }
+
+  let matched = false;
+  for(const [grpName, items] of Object.entries(groups)){
+    const grp = el('optgroup');
+    grp.label = getVoiceGroupName(grpName);
+    for(const v of items){
+      const opt = el('option', getVoiceLabel(v.id, v.label));
+      opt.value = v.id;
+      if(v.id === currentVoice){ opt.selected = true; matched = true; }
+      grp.append(opt);
+    }
+    select.append(grp);
+  }
+  if(!matched && currentVoice){
+    const grp = el('optgroup');
+    grp.label = t('grpOther');
+    const opt = el('option', currentVoice);
+    opt.value = currentVoice;
+    opt.selected = true;
+    grp.append(opt);
+    select.prepend(grp);
+  }
+}
+
 function buildVoiceSelect(currentVoice){
   const select = el('select');
   select.id = 'voice';
@@ -609,7 +701,8 @@ async function act(action) { try {if(action==='generate'){await save();} await a
 async function save(){
   if(!current)return;
   for(const s of current.segments){if(drafts.has(s.id))s.translation=drafts.get(s.id);}
-  await api(`/projects/${selected}/segments`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({segments:current.segments,voice:$('#voice').value})});
+  const voiceVal = current.voice || 'Hải Đăng';
+  await api(`/projects/${selected}/segments`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({segments:current.segments,voice:voiceVal})});
   dirty=false;drafts.clear();
 }
 
@@ -627,6 +720,22 @@ function renderSegments(container, editable, warningsMap, list){
     const tBtn = el('button', `${time(s.start)} → ${time(s.end)}`, 'time secondary');
     tBtn.onclick = () => { stopPreview(); $('video').currentTime = s.start; };
     actions.append(tBtn);
+
+    if (current && current.multi_speaker) {
+      const isFemale = (s.gender === 'female');
+      const spkBtn = el('button', isFemale ? t('speakerFemale') : t('speakerMale'), 'speaker-badge ' + (isFemale ? 'speaker-female' : 'speaker-male'));
+      spkBtn.title = t('toggleSpeakerHint');
+      spkBtn.onclick = () => {
+        const newGender = (s.gender === 'female') ? 'male' : 'female';
+        s.gender = newGender;
+        s.speaker = newGender;
+        s.voice = (newGender === 'female') ? (current.voice_female || 'Mai Anh') : (current.voice_male || 'Hải Đăng');
+        spkBtn.className = 'speaker-badge ' + (newGender === 'female' ? 'speaker-female' : 'speaker-male');
+        spkBtn.textContent = newGender === 'female' ? t('speakerFemale') : t('speakerMale');
+        dirty = true;
+      };
+      actions.append(spkBtn);
+    }
 
     if (w) {
       actions.append(el('div', t('warnBadge', w.overflow_seconds), 'warning-badge'));
@@ -716,13 +825,6 @@ function renderSegments(container, editable, warningsMap, list){
   }
 }
 
-async function initUploadForm(){
-  await fetchVoicesAll();
-  const uploadVoice = $('#uploadVoice');
-  if(uploadVoice){
-    populateVoiceSelect(uploadVoice, 'Hải Đăng');
-  }
-}
 
 function renderPipeline(p){
   const steps=[
@@ -904,91 +1006,14 @@ function renderDownloadSection(p){
   return card;
 }
 
-function renderMixCard(p){
-  const card = el('div', undefined, 'mix-card');
-  const header = el('div', undefined, 'mix-header');
-  header.append(el('h3', t('mixHeader')));
-  card.append(header);
+function renderMixQuickBar(p){
+  const bar = el('div', undefined, 'mix-quick-bar');
+  const left = el('div', undefined, 'mix-quick-left');
 
-  const grid = el('div', undefined, 'mix-grid');
-
-  const duckCtrl = el('div', undefined, 'mix-control');
-  const duckLabel = el('label', undefined, 'checkbox-label');
-  const duckCb = el('input');
-  duckCb.type = 'checkbox';
-  duckCb.checked = (p.mix_ducking !== 0);
-  duckLabel.append(duckCb, el('span', t('mixDuckingLabel')));
-  duckCtrl.append(duckLabel);
-  duckCtrl.append(el('small', t('mixDuckingHint'), 'hint-text'));
-  grid.append(duckCtrl);
-
-  const bgCtrl = el('div', undefined, 'mix-control');
-  const bgLabel = el('label');
-  const bgValSpan = el('span', `${Math.round((p.mix_background_gain ?? 0.25) * 100)}%`, 'val');
-  bgLabel.append(el('span', t('mixBgLabel')), bgValSpan);
-  const bgRange = el('input');
-  bgRange.type = 'range';
-  bgRange.min = '0'; bgRange.max = '100'; bgRange.step = '5';
-  bgRange.value = Math.round((p.mix_background_gain ?? 0.25) * 100);
-  bgRange.oninput = () => { bgValSpan.textContent = `${bgRange.value}%`; };
-  bgCtrl.append(bgLabel, bgRange);
-  grid.append(bgCtrl);
-
-  const narrCtrl = el('div', undefined, 'mix-control');
-  const narrLabel = el('label');
-  const narrValSpan = el('span', `${Math.round((p.mix_narration_gain ?? 1.0) * 100)}%`, 'val');
-  narrLabel.append(el('span', t('mixNarrLabel')), narrValSpan);
-  const narrRange = el('input');
-  narrRange.type = 'range';
-  narrRange.min = '20'; narrRange.max = '150'; narrRange.step = '5';
-  narrRange.value = Math.round((p.mix_narration_gain ?? 1.0) * 100);
-  narrRange.oninput = () => { narrValSpan.textContent = `${narrRange.value}%`; };
-  narrCtrl.append(narrLabel, narrRange);
-  grid.append(narrCtrl);
-
-  const attenCtrl = el('div', undefined, 'mix-control');
-  const attenLabel = el('label');
-  const attenValSpan = el('span', `-${Math.round(p.mix_ducking_attenuation ?? 16)} dB`, 'val');
-  attenLabel.append(el('span', t('mixAttenLabel')), attenValSpan);
-  const attenRange = el('input');
-  attenRange.type = 'range';
-  attenRange.min = '8'; attenRange.max = '28'; attenRange.step = '2';
-  attenRange.value = Math.round(p.mix_ducking_attenuation ?? 16);
-  attenRange.oninput = () => { attenValSpan.textContent = `-${attenRange.value} dB`; };
-  attenCtrl.append(attenLabel, attenRange);
-  grid.append(attenCtrl);
-
-  card.append(grid);
-
-  const saveMixSettings = async () => {
-    try {
-      await api(`/projects/${p.id}/settings`, {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          mix_ducking: duckCb.checked ? 1 : 0,
-          mix_background_gain: parseFloat(bgRange.value) / 100.0,
-          mix_narration_gain: parseFloat(narrRange.value) / 100.0,
-          mix_ducking_attenuation: parseFloat(attenRange.value)
-        })
-      });
-      p.mix_ducking = duckCb.checked ? 1 : 0;
-      p.mix_background_gain = parseFloat(bgRange.value) / 100.0;
-      p.mix_narration_gain = parseFloat(narrRange.value) / 100.0;
-      p.mix_ducking_attenuation = parseFloat(attenRange.value);
-    } catch(err) {
-      toast(t('mixSaveErr') + err.message);
-    }
-  };
-
-  duckCb.onchange = saveMixSettings;
-  bgRange.onchange = saveMixSettings;
-  narrRange.onchange = saveMixSettings;
-  attenRange.onchange = saveMixSettings;
-
-  const actions = el('div', undefined, 'mix-actions');
   const previewBtn = el('button', t('mixPreviewBtn'), 'secondary');
-  const remixBtn = el('button', t('mixRemixBtn'));
+  const remixBtn = el('button', t('mixRemixBtn'), 'secondary');
+  const settingsBtn = el('button', t('btnMixSettings'), 'secondary');
+
   const playerBox = el('div', undefined, 'mix-preview-player');
   playerBox.hidden = true;
   const audioEl = el('audio');
@@ -999,7 +1024,6 @@ function renderMixCard(p){
     previewBtn.disabled = true;
     previewBtn.textContent = t('mixPreviewLoading');
     try {
-      await saveMixSettings();
       let startSec = 10;
       if(p.segments && p.segments.length > 0){
         startSec = Math.max(0, p.segments[0].start - 1);
@@ -1024,7 +1048,6 @@ function renderMixCard(p){
   remixBtn.onclick = async () => {
     remixBtn.disabled = true;
     try {
-      await saveMixSettings();
       await api(`/projects/${p.id}/remix`, {method: 'POST'});
       toast(t('mixStarted'));
       await refresh(true);
@@ -1035,9 +1058,15 @@ function renderMixCard(p){
     }
   };
 
-  actions.append(previewBtn, remixBtn);
-  card.append(actions, playerBox);
-  return card;
+  settingsBtn.onclick = () => {
+    openProjectModal('edit', p);
+    const d = $('#modalMixDetails');
+    if (d) d.open = true;
+  };
+
+  left.append(previewBtn, remixBtn, settingsBtn);
+  bar.append(left, playerBox);
+  return bar;
 }
 
 async function deleteProject(p){
@@ -1071,82 +1100,53 @@ function render(){
   const hLeft=el('div',undefined,'heading-left');
   const langPill = el('span', t('badge_' + p.source_language) || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
   hLeft.append(el('h2',p.name),el('span',getStatusLabel(p.state)||p.state,'status'), langPill);
+  if(p.multi_speaker){
+    hLeft.append(el('span', t('badgeMultiSpeaker'), 'badge-multi-speaker'));
+  }
   heading.append(hLeft);
 
   const hActions=el('div',undefined,'heading-actions');
+  const settingsBtn=el('button',t('settingsBtn'),'btn-settings secondary');
+  settingsBtn.onclick=()=>openProjectModal('edit', p);
   const delMainBtn=el('button',t('deleteProjectBtn'),'btn-danger secondary');
   delMainBtn.title=t('deleteProjectBtnTitle');
   delMainBtn.onclick=()=>deleteProject(p);
-  hActions.append(delMainBtn);
+  hActions.append(settingsBtn, delMainBtn);
   heading.append(hActions);
   w.append(heading);
+
   w.append(renderPipeline(p));
   const dlSec = renderDownloadSection(p);
   if(dlSec) w.append(dlSec);
+
   w.append(el('p',t('segmentsCountMeta', p.progress||getStatusLabel(p.state), p.segments.length, time(p.duration))));
   const video=el('video');video.controls=true;video.preload='metadata';video.src=`/api/projects/${p.id}/files/source`;w.append(video);
   if(p.error)w.append(el('pre',p.error,'error'));
-  
-  const tools=el('div',undefined,'toolbar');
-  tools.append(el('label',t('voiceLabelToolbar')));
-  const voiceSelect=buildVoiceSelect(p.voice);
-  voiceSelect.onchange=async()=>{
-    stopPreview();dirty=true;
-    try{
-      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:voiceSelect.value})});
-      p.voice=voiceSelect.value;toast(t('toastVoiceChanged')+voiceSelect.value);
-    }catch(e){toast(e.message);}
-  };
-  tools.append(voiceSelect);
 
-  const pauseLabel=el('label',undefined,'checkbox-label');
-  const pauseCb=el('input');pauseCb.type='checkbox';
-  pauseCb.checked=(p.pause_review!==0);
-  pauseCb.onchange=async()=>{
-    try{
-      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({pause_review:pauseCb.checked})});
-      p.pause_review=pauseCb.checked?1:0;
-      toast(pauseCb.checked?t('toastPauseOn'):t('toastPauseOff'));
-    }catch(e){toast(e.message);pauseCb.checked=!pauseCb.checked;}
-  };
-  pauseLabel.append(pauseCb,el('span',t('pauseReviewShort')));
-  tools.append(pauseLabel);
-
-  const autoFitLabel=el('label',undefined,'checkbox-label');
-  const autoFitCb=el('input');autoFitCb.type='checkbox';
-  autoFitCb.checked=(p.auto_fit!==0);
-  autoFitCb.onchange=async()=>{
-    try{
-      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_fit:autoFitCb.checked})});
-      p.auto_fit=autoFitCb.checked?1:0;
-      toast(autoFitCb.checked?t('toastAutoFitOn'):t('toastAutoFitOff'));
-    }catch(e){toast(e.message);autoFitCb.checked=!autoFitCb.checked;}
-  };
-  autoFitLabel.append(autoFitCb,el('span',t('autoFitShort')));
-  tools.append(autoFitLabel);
-
-  const fitDurLabel=el('label',undefined,'checkbox-label');
-  const fitDurCb=el('input');fitDurCb.type='checkbox';
-  fitDurCb.checked=(p.fit_duration!==0);
-  fitDurCb.onchange=async()=>{
-    try{
-      await api(`/projects/${p.id}/settings`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fit_duration:fitDurCb.checked})});
-      p.fit_duration=fitDurCb.checked?1:0;
-      toast(fitDurCb.checked?t('toastFitDurationOn'):t('toastFitDurationOff'));
-    }catch(e){toast(e.message);fitDurCb.checked=!fitDurCb.checked;}
-  };
-  fitDurLabel.append(fitDurCb,el('span',t('fitDurationShort')));
-  tools.append(fitDurLabel);
-
+  const actBar=el('div',undefined,'toolbar');
   const editable=['review','failed','completed'].includes(p.state);
   if(editable&&p.segments.length){
-    const saveButton=el('button',t('saveTranslationBtn'),'secondary');saveButton.onclick=async()=>{try{await save();toast(t('toastSaved'));await refresh(true);}catch(e){toast(e.message);}};tools.append(saveButton);
-    const generate=el('button',t('saveGenerateBtn'));generate.onclick=()=>act('generate');tools.append(generate);
+    const saveButton=el('button',t('saveTranslationBtn'),'secondary');
+    saveButton.onclick=async()=>{try{await save();toast(t('toastSaved'));await refresh(true);}catch(e){toast(e.message);}};
+    const generate=el('button',t('saveGenerateBtn'));
+    generate.onclick=()=>act('generate');
+    actBar.append(saveButton, generate);
   }
-  if(['running','queued'].includes(p.state)){const b=el('button',t('cancelProcessBtn'),'secondary');b.onclick=()=>act('cancel');tools.append(b);}
-  if(['failed','cancelled'].includes(p.state)){const b=el('button',t('retryStepBtn'),'secondary');b.onclick=()=>act('resume');tools.append(b);}
-  w.append(tools);
-  w.append(renderMixCard(p));
+  if(['running','queued'].includes(p.state)){
+    const b=el('button',t('cancelProcessBtn'),'secondary');
+    b.onclick=()=>act('cancel');
+    actBar.append(b);
+  }
+  if(['failed','cancelled'].includes(p.state)){
+    const b=el('button',t('retryStepBtn'),'secondary');
+    b.onclick=()=>act('resume');
+    actBar.append(b);
+  }
+  if(actBar.childNodes.length > 0){
+    w.append(actBar);
+  }
+
+  w.append(renderMixQuickBar(p));
   if(p.segments.length){
     w.append(el('p',t('segmentHint'),'hint'));
 
@@ -1279,46 +1279,218 @@ async function refresh(force=false){
   }catch(e){toast(e.message);}finally{busy=false;}
 }
 
-$('#upload').onclick=()=>{
-  const fileInput=$('#file');
-  const file=fileInput.files[0];if(!file){toast(t('toastSelectVideoFirst'));return;}
-  const form=new FormData();
-  form.append('file',file);
-  const voiceEl=$('#uploadVoice');
-  if(voiceEl&&voiceEl.value)form.append('voice',voiceEl.value);
-  const pauseEl=$('#uploadPauseReview');
-  form.append('pause_review',pauseEl&&pauseEl.checked?'1':'0');
-  const autoFitEl=$('#uploadAutoFit');
-  form.append('auto_fit',autoFitEl&&autoFitEl.checked?'1':'0');
-  const fitDurEl=$('#uploadFitDuration');
-  form.append('fit_duration',fitDurEl&&fitDurEl.checked?'1':'0');
-  const langEl=$('#uploadSourceLang');
-  if(langEl&&langEl.value)form.append('source_language',langEl.value);
-  const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');
-  $('#upload').disabled=true;$('#uploadProgress').hidden=false;
-  xhr.upload.onprogress=e=>{if(e.lengthComputable)$('#uploadProgress').value=e.loaded/e.total*100;};
-  xhr.onload=()=>{
-    if(xhr.status<300){
-      fileInput.value='';
-      $('#uploadProgress').value=0;
-      selected=JSON.parse(xhr.responseText).id;
-      dirty=false;
-      drafts.clear();
-      refresh(true);
-      toast(t('toastUploadSuccess'));
-    }else{
-      toast(t('toastUploadErr')+xhr.responseText);
+let projectModalMode = 'create';
+let editingProjectId = null;
+
+function initProjectModal() {
+  const modal = $('#projectModal');
+  const addBtn = $('#addProjectBtn');
+  const closeBtn = $('#projectModalCloseBtn');
+  const cancelBtn = $('#projectModalCancelBtn');
+  const submitBtn = $('#projectModalSubmitBtn');
+  const multiCb = $('#modalMultiSpeaker');
+  const bgRange = $('#modalBgRange');
+  const narrRange = $('#modalNarrRange');
+  const attenRange = $('#modalAttenRange');
+
+  if (bgRange) bgRange.oninput = () => { $('#modalBgVal').textContent = `${bgRange.value}%`; };
+  if (narrRange) narrRange.oninput = () => { $('#modalNarrVal').textContent = `${narrRange.value}%`; };
+  if (attenRange) attenRange.oninput = () => { $('#modalAttenVal').textContent = `-${attenRange.value} dB`; };
+
+  if (multiCb) {
+    multiCb.onchange = () => {
+      const isMulti = multiCb.checked;
+      $('#modalMultiVoiceGroup').hidden = !isMulti;
+      $('#modalSingleVoiceGroup').hidden = isMulti;
+    };
+  }
+
+  const hide = () => { modal.hidden = true; };
+  if (closeBtn) closeBtn.onclick = hide;
+  if (cancelBtn) cancelBtn.onclick = hide;
+  modal.onclick = (e) => { if (e.target === modal) hide(); };
+
+  if (addBtn) {
+    addBtn.onclick = () => openProjectModal('create');
+  }
+
+  if (submitBtn) {
+    submitBtn.onclick = handleModalSubmit;
+  }
+}
+
+async function openProjectModal(mode, p = null) {
+  projectModalMode = mode;
+  editingProjectId = p ? p.id : null;
+  const modal = $('#projectModal');
+  await fetchVoicesAll();
+
+  if (mode === 'create') {
+    $('#projectModalTitle').textContent = t('projectModalTitleAdd');
+    $('#modalFileGroup').hidden = false;
+    $('#modalFileInput').value = '';
+    $('#modalSourceLang').value = 'ko';
+    $('#modalMultiSpeaker').checked = false;
+    $('#modalMultiVoiceGroup').hidden = true;
+    $('#modalSingleVoiceGroup').hidden = false;
+
+    populateGenderVoiceSelect($('#modalVoiceMale'), 'male', 'Hải Đăng');
+    populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', 'Mai Anh');
+    populateVoiceSelect($('#modalSingleVoice'), 'Hải Đăng');
+
+    $('#modalPauseReview').checked = true;
+    $('#modalFitDuration').checked = true;
+    $('#modalAutoFit').checked = true;
+
+    $('#modalMixDucking').checked = true;
+    $('#modalBgRange').value = 25;
+    $('#modalBgVal').textContent = '25%';
+    $('#modalNarrRange').value = 100;
+    $('#modalNarrVal').textContent = '100%';
+    $('#modalAttenRange').value = 16;
+    $('#modalAttenVal').textContent = '-16 dB';
+
+    $('#projectModalSubmitBtn').textContent = t('startProcessBtn');
+    $('#modalUploadProgress').hidden = true;
+  } else {
+    // edit mode
+    $('#projectModalTitle').textContent = t('projectModalTitleEdit');
+    $('#modalFileGroup').hidden = true;
+    $('#modalSourceLang').value = p.source_language || 'ko';
+
+    const isMulti = (p.multi_speaker === 1);
+    $('#modalMultiSpeaker').checked = isMulti;
+    $('#modalMultiVoiceGroup').hidden = !isMulti;
+    $('#modalSingleVoiceGroup').hidden = isMulti;
+
+    populateGenderVoiceSelect($('#modalVoiceMale'), 'male', p.voice_male || 'Hải Đăng');
+    populateGenderVoiceSelect($('#modalVoiceFemale'), 'female', p.voice_female || 'Mai Anh');
+    populateVoiceSelect($('#modalSingleVoice'), p.voice || 'Hải Đăng');
+
+    $('#modalPauseReview').checked = (p.pause_review !== 0);
+    $('#modalFitDuration').checked = (p.fit_duration !== 0);
+    $('#modalAutoFit').checked = (p.auto_fit !== 0);
+
+    $('#modalMixDucking').checked = (p.mix_ducking !== 0);
+    const bg = Math.round((p.mix_background_gain ?? 0.25) * 100);
+    $('#modalBgRange').value = bg;
+    $('#modalBgVal').textContent = `${bg}%`;
+
+    const narr = Math.round((p.mix_narration_gain ?? 1.0) * 100);
+    $('#modalNarrRange').value = narr;
+    $('#modalNarrVal').textContent = `${narr}%`;
+
+    const atten = Math.round(p.mix_ducking_attenuation ?? 16);
+    $('#modalAttenRange').value = atten;
+    $('#modalAttenVal').textContent = `-${atten} dB`;
+
+    $('#projectModalSubmitBtn').textContent = t('saveSettingsBtn');
+    $('#modalUploadProgress').hidden = true;
+  }
+
+  modal.hidden = false;
+}
+
+async function handleModalSubmit() {
+  const submitBtn = $('#projectModalSubmitBtn');
+  const modal = $('#projectModal');
+  const isMulti = $('#modalMultiSpeaker').checked ? 1 : 0;
+  const voiceMale = $('#modalVoiceMale').value || 'Hải Đăng';
+  const voiceFemale = $('#modalVoiceFemale').value || 'Mai Anh';
+  const singleVoice = $('#modalSingleVoice').value || 'Hải Đăng';
+  const pauseReview = $('#modalPauseReview').checked;
+  const fitDuration = $('#modalFitDuration').checked;
+  const autoFit = $('#modalAutoFit').checked;
+  const mixDucking = $('#modalMixDucking').checked ? 1 : 0;
+  const mixBg = parseFloat($('#modalBgRange').value) / 100.0;
+  const mixNarr = parseFloat($('#modalNarrRange').value) / 100.0;
+  const mixAtten = parseFloat($('#modalAttenRange').value);
+
+  if (projectModalMode === 'create') {
+    const file = $('#modalFileInput').files[0];
+    if (!file) {
+      toast(t('toastSelectVideoFirst'));
+      return;
     }
-    $('#upload').disabled=false;
-    $('#uploadProgress').hidden=true;
-  };
-  xhr.onerror=()=>{
-    toast(t('toastUploadNetErr'));
-    $('#upload').disabled=false;
-    $('#uploadProgress').hidden=true;
-  };
-  xhr.send(form);
-};
+    const form = new FormData();
+    form.append('file', file);
+    form.append('source_language', $('#modalSourceLang').value || 'ko');
+    form.append('multi_speaker', isMulti ? '1' : '0');
+    form.append('voice_male', voiceMale);
+    form.append('voice_female', voiceFemale);
+    form.append('voice', isMulti ? voiceMale : singleVoice);
+    form.append('pause_review', pauseReview ? '1' : '0');
+    form.append('fit_duration', fitDuration ? '1' : '0');
+    form.append('auto_fit', autoFit ? '1' : '0');
+    form.append('mix_ducking', String(mixDucking));
+    form.append('mix_background_gain', String(mixBg));
+    form.append('mix_narration_gain', String(mixNarr));
+    form.append('mix_ducking_attenuation', String(mixAtten));
+
+    submitBtn.disabled = true;
+    const progressEl = $('#modalUploadProgress');
+    progressEl.hidden = false;
+    progressEl.value = 0;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/projects');
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) progressEl.value = (e.loaded / e.total) * 100;
+    };
+    xhr.onload = () => {
+      submitBtn.disabled = false;
+      progressEl.hidden = true;
+      if (xhr.status < 300) {
+        modal.hidden = true;
+        const res = JSON.parse(xhr.responseText);
+        selected = res.id;
+        dirty = false;
+        drafts.clear();
+        refresh(true);
+        toast(t('toastUploadSuccess'));
+      } else {
+        toast(t('toastUploadErr') + xhr.responseText);
+      }
+    };
+    xhr.onerror = () => {
+      submitBtn.disabled = false;
+      progressEl.hidden = true;
+      toast(t('toastUploadNetErr'));
+    };
+    xhr.send(form);
+  } else {
+    // Edit mode: PATCH
+    if (!editingProjectId) return;
+    submitBtn.disabled = true;
+    try {
+      const payload = {
+        multi_speaker: isMulti,
+        voice_male: voiceMale,
+        voice_female: voiceFemale,
+        voice: isMulti ? voiceMale : singleVoice,
+        pause_review: pauseReview,
+        fit_duration: fitDuration,
+        auto_fit: autoFit,
+        mix_ducking: mixDucking,
+        mix_background_gain: mixBg,
+        mix_narration_gain: mixNarr,
+        mix_ducking_attenuation: mixAtten
+      };
+      await api(`/projects/${editingProjectId}/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      modal.hidden = true;
+      toast(t('toastSettingsSaved'));
+      await refresh(true);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+}
 
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 
@@ -1606,11 +1778,12 @@ function setUiLanguage(lang){
   const langSelect = $('#uiLangSelect');
   if(langSelect && langSelect.value !== currentLang) langSelect.value = currentLang;
 
-  const uploadVoice = $('#uploadVoice');
-  if(uploadVoice) populateVoiceSelect(uploadVoice, uploadVoice.value || 'Hải Đăng');
-
-  const voiceSelect = $('#voice');
-  if(voiceSelect && current) populateVoiceSelect(voiceSelect, current.voice);
+  const modalVoiceMale = $('#modalVoiceMale');
+  if(modalVoiceMale) populateGenderVoiceSelect(modalVoiceMale, 'male', modalVoiceMale.value || 'Hải Đăng');
+  const modalVoiceFemale = $('#modalVoiceFemale');
+  if(modalVoiceFemale) populateGenderVoiceSelect(modalVoiceFemale, 'female', modalVoiceFemale.value || 'Mai Anh');
+  const modalSingleVoice = $('#modalSingleVoice');
+  if(modalSingleVoice) populateVoiceSelect(modalSingleVoice, modalSingleVoice.value || 'Hải Đăng');
 
   if(current) render();
   refresh(true);
@@ -1626,7 +1799,7 @@ function initLanguageSwitch(){
 }
 
 initLanguageSwitch();
-initUploadForm();
+initProjectModal();
 initUsageModal();
 initVoiceModal();
 refresh();setInterval(()=>refresh(),3000);

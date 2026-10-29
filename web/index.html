@@ -21,46 +21,12 @@
 </header>
 <main>
 <aside>
-  <section class="upload">
-    <h2 data-i18n="uploadTitle">Thêm video</h2>
-    <p data-i18n="uploadDesc">Hỗ trợ video tiếng Hàn, Anh hoặc Nhật. Hệ thống sử dụng track audio đầu tiên.</p>
-    <input type="file" id="file" accept="video/*,.mkv,.mov,.webm">
-    <div class="field-block">
-      <label for="uploadSourceLang" data-i18n="sourceLangLabel">Ngôn ngữ video nguồn:</label>
-      <select id="uploadSourceLang">
-        <option value="ko" selected data-i18n="langKo">🇰🇷 Tiếng Hàn (Korean)</option>
-        <option value="en" data-i18n="langEn">🇺🇸 Tiếng Anh (English)</option>
-        <option value="ja" data-i18n="langJa">🇯🇵 Tiếng Nhật (Japanese)</option>
-      </select>
-    </div>
-    <details class="upload-options">
-      <summary data-i18n="advancedOptions">⚙️ Tùy chọn nâng cao</summary>
-      <div class="options-body">
-        <div class="field-block">
-          <label for="uploadVoice" data-i18n="voiceLabel">Giọng đọc:</label>
-          <select id="uploadVoice"></select>
-        </div>
-        <label class="checkbox-label" data-i18n-title="pauseReviewTitle">
-          <input type="checkbox" id="uploadPauseReview" checked>
-          <span data-i18n="pauseReviewLabel">Dừng để duyệt bản dịch</span>
-        </label>
-        <small class="hint-text" data-i18n="pauseReviewHint">Bỏ chọn nếu muốn chạy tự động từ đầu đến cuối.</small>
-        <label class="checkbox-label" data-i18n-title="fitDurationTitle">
-          <input type="checkbox" id="uploadFitDuration" checked>
-          <span data-i18n="fitDurationLabel">Ép thời lượng khi dịch (AI dịch cô đọng)</span>
-        </label>
-        <small class="hint-text" data-i18n="fitDurationHint">Giới hạn số từ của bản dịch vừa khít thời lượng nói của từng câu.</small>
-        <label class="checkbox-label" data-i18n-title="autoFitTitle">
-          <input type="checkbox" id="uploadAutoFit" checked>
-          <span data-i18n="autoFitLabel">Tự nén âm thanh vừa thời gian</span>
-        </label>
-        <small class="hint-text" data-i18n="autoFitHint">Tự nén tốc độ để vừa khung thời gian, tránh lỗi.</small>
-      </div>
-    </details>
-    <button id="upload" data-i18n="addToQueueBtn">Thêm vào hàng đợi</button>
-    <progress id="uploadProgress" max="100" value="0" hidden></progress>
-  </section>
-  <h2 data-i18n="projectsTitle">Dự án</h2>
+  <div class="sidebar-top">
+    <button id="addProjectBtn" class="btn-add-project" data-i18n="addProjectBtn">➕ Thêm Video Mới</button>
+  </div>
+  <div class="sidebar-title-row">
+    <span class="sidebar-title" data-i18n="projectsTitle">Danh Sách Dự Án</span>
+  </div>
   <div id="projects"></div>
 </aside>
 <article id="workspace">
@@ -71,6 +37,115 @@
   </div>
 </article>
 </main>
+<div id="projectModal" class="modal-backdrop" hidden>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 id="projectModalTitle" data-i18n="projectModalTitleAdd">➕ Thêm Video Mới & Thiết Lập</h3>
+      <div class="modal-header-actions">
+        <button id="projectModalCloseBtn" class="btn-icon" data-i18n-title="closeTitle">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <!-- File input group (only for Create mode) -->
+      <div class="field-block" id="modalFileGroup">
+        <label for="modalFileInput" data-i18n="selectVideoLabel">Chọn file video:</label>
+        <p class="hint-text" data-i18n="uploadDesc">Hỗ trợ MP4, MKV, MOV, WebM... Hệ thống sử dụng track audio đầu tiên.</p>
+        <input type="file" id="modalFileInput" accept="video/*,.mkv,.mov,.webm">
+      </div>
+
+      <!-- Source language -->
+      <div class="field-block">
+        <label for="modalSourceLang" data-i18n="sourceLangLabel">Ngôn ngữ video nguồn:</label>
+        <select id="modalSourceLang">
+          <option value="ko" selected data-i18n="langKo">🇰🇷 Tiếng Hàn (Korean)</option>
+          <option value="en" data-i18n="langEn">🇺🇸 Tiếng Anh (English)</option>
+          <option value="ja" data-i18n="langJa">🇯🇵 Tiếng Nhật (Japanese)</option>
+        </select>
+      </div>
+
+      <!-- Multi-speaker toggle -->
+      <div class="modal-section-card">
+        <label class="checkbox-label" data-i18n-title="multiSpeakerTitle">
+          <input type="checkbox" id="modalMultiSpeaker">
+          <span data-i18n="multiSpeakerLabel">👥 Nhận diện nhiều người nói (Tự gán giọng Nam / Nữ)</span>
+        </label>
+        <small class="hint-text" data-i18n="multiSpeakerHint">Tự động phân tích cao độ giọng nói để nhận diện giọng Nam / Nữ trong video phỏng vấn, đối thoại.</small>
+
+        <!-- Multi-speaker voices (Nam & Nu) -->
+        <div id="modalMultiVoiceGroup" class="voice-dual-grid" hidden>
+          <div class="field-block">
+            <label for="modalVoiceMale" data-i18n="voiceMaleLabel">👨 Giọng Nam:</label>
+            <select id="modalVoiceMale"></select>
+          </div>
+          <div class="field-block">
+            <label for="modalVoiceFemale" data-i18n="voiceFemaleLabel">👩 Giọng Nữ:</label>
+            <select id="modalVoiceFemale"></select>
+          </div>
+        </div>
+
+        <!-- Single voice -->
+        <div id="modalSingleVoiceGroup" class="field-block">
+          <label for="modalSingleVoice" data-i18n="voiceLabel">Giọng đọc thuyết minh:</label>
+          <select id="modalSingleVoice"></select>
+        </div>
+      </div>
+
+      <!-- Pipeline checkboxes -->
+      <div class="modal-section-card">
+        <label class="checkbox-label" data-i18n-title="pauseReviewTitle">
+          <input type="checkbox" id="modalPauseReview" checked>
+          <span data-i18n="pauseReviewLabel">Dừng để duyệt bản dịch</span>
+        </label>
+        <small class="hint-text" data-i18n="pauseReviewHint">Bỏ chọn nếu muốn chạy tự động từ đầu đến cuối.</small>
+
+        <label class="checkbox-label" data-i18n-title="fitDurationTitle">
+          <input type="checkbox" id="modalFitDuration" checked>
+          <span data-i18n="fitDurationLabel">Ép thời lượng khi dịch (AI dịch cô đọng)</span>
+        </label>
+        <small class="hint-text" data-i18n="fitDurationHint">Giới hạn số từ của bản dịch vừa khít thời lượng nói của từng câu.</small>
+
+        <label class="checkbox-label" data-i18n-title="autoFitTitle">
+          <input type="checkbox" id="modalAutoFit" checked>
+          <span data-i18n="autoFitLabel">Tự nén âm thanh vừa thời gian</span>
+        </label>
+        <small class="hint-text" data-i18n="autoFitHint">Tự nén tốc độ để vừa khung thời gian, tránh lỗi.</small>
+      </div>
+
+      <!-- Audio Mix settings -->
+      <details class="upload-options" id="modalMixDetails">
+        <summary data-i18n="mixSettingsSummary">🎛️ Thiết lập phối âm nền & Ducking</summary>
+        <div class="options-body">
+          <label class="checkbox-label">
+            <input type="checkbox" id="modalMixDucking" checked>
+            <span data-i18n="mixDuckingLabel">Tự hạ nền khi có lời đọc (Ducking)</span>
+          </label>
+          <small class="hint-text" data-i18n="mixDuckingHint">Tự động giảm âm nền khi có tiếng Việt, trả lại âm lượng khi ngừng.</small>
+          
+          <div class="mix-grid">
+            <div class="mix-control">
+              <label><span data-i18n="mixBgLabel">Âm lượng nền gốc:</span> <span id="modalBgVal" class="val">25%</span></label>
+              <input type="range" id="modalBgRange" min="0" max="100" step="5" value="25">
+            </div>
+            <div class="mix-control">
+              <label><span data-i18n="mixNarrLabel">Âm lượng thuyết minh:</span> <span id="modalNarrVal" class="val">100%</span></label>
+              <input type="range" id="modalNarrRange" min="20" max="150" step="5" value="100">
+            </div>
+            <div class="mix-control">
+              <label><span data-i18n="mixAttenLabel">Mức giảm nền (Ducking):</span> <span id="modalAttenVal" class="val">-16 dB</span></label>
+              <input type="range" id="modalAttenRange" min="8" max="28" step="2" value="16">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <progress id="modalUploadProgress" max="100" value="0" hidden></progress>
+    </div>
+    <div class="modal-footer">
+      <button id="projectModalCancelBtn" class="secondary" data-i18n="cancelBtn">Hủy</button>
+      <button id="projectModalSubmitBtn" class="primary" data-i18n="startProcessBtn">Bắt đầu xử lý</button>
+    </div>
+  </div>
+</div>
 <div id="voiceModal" class="modal-backdrop" hidden>
   <div class="modal-dialog">
     <div class="modal-header">

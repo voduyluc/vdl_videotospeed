@@ -126,6 +126,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(proj['pause_review'], 0)
         self.assertEqual(proj['auto_fit'], 0)
 
+    def test_multi_speaker_upload_and_settings(self):
+        r = self.client.post('/api/projects', files={'file': ('interview.mp4', b'video', 'video/mp4')},
+                             data={'multi_speaker': '1', 'voice_male': 'Hải Đăng', 'voice_female': 'Mai Anh'})
+        self.assertEqual(r.status_code, 200)
+        pid = r.json()['id']
+        proj = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj['multi_speaker'], 1)
+        self.assertEqual(proj['voice_male'], 'Hải Đăng')
+        self.assertEqual(proj['voice_female'], 'Mai Anh')
+
+        # Update settings via PATCH
+        r_patch = self.client.patch(f'/api/projects/{pid}/settings', json={
+            'multi_speaker': 0,
+            'voice_male': 'Thiện Minh',
+            'voice_female': 'Trúc Ly'
+        })
+        self.assertEqual(r_patch.status_code, 200)
+        proj_updated = self.client.get(f'/api/projects/{pid}').json()
+        self.assertEqual(proj_updated['multi_speaker'], 0)
+        self.assertEqual(proj_updated['voice_male'], 'Thiện Minh')
+        self.assertEqual(proj_updated['voice_female'], 'Trúc Ly')
+
     def test_empty_translation_cannot_generate(self):
         pid = self.create()
         segments = self.review(pid)
@@ -474,6 +496,57 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual(parse_translation(content)[0]['text'], 'Chào')
         with self.assertRaises(ValueError):
             parse_translation('```json\ninvalid\n```')
+
+    def test_classify_audio_gender_pitch(self):
+        import numpy as np
+        from app.model_worker import classify_audio_gender
+
+        sr = 16000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+
+        # 120 Hz sine wave -> typical male pitch (85-165 Hz)
+        male_audio = (np.sin(2 * np.pi * 120 * t) * 32767).astype(np.int16)
+        # 220 Hz sine wave -> typical female pitch (165-300 Hz)
+        female_audio = (np.sin(2 * np.pi * 220 * t) * 32767).astype(np.int16)
+
+        male_gender, male_f0 = classify_audio_gender(male_audio, sr)
+        female_gender, female_f0 = classify_audio_gender(female_audio, sr)
+
+        self.assertEqual(male_gender, 'male')
+        self.assertAlmostEqual(male_f0, 120.0, delta=5.0)
+        self.assertEqual(female_gender, 'female')
+        self.assertAlmostEqual(female_f0, 220.0, delta=5.0)
+
+    def test_multi_speaker_segment_synthesis_voices(self):
+        from app.model_worker import synthesize
+        pid = 'd' * 32
+        with core.db() as c:
+            c.execute('INSERT OR REPLACE INTO projects(id,name,state,step,created,voice,multi_speaker,voice_male,voice_female) VALUES(?,?,?,?,?,?,?,?,?)',
+                      (pid, 'test_multi', 'running', 'tts', 0, 'Hải Đăng', 1, 'Hải Đăng', 'Mai Anh'))
+        path = core.folder(pid) / 'segments.json'
+        # 2 segments: s1 male voice (Hải Đăng), s2 female voice (Mai Anh)
+        rows = [
+            {'id': 's1', 'start': 0, 'end': 1, 'source': 'a', 'translation': 'Chào anh', 'gender': 'male', 'voice': 'Hải Đăng'},
+            {'id': 's2', 'start': 2, 'end': 3, 'source': 'b', 'translation': 'Chào em', 'gender': 'female', 'voice': 'Mai Anh'}
+        ]
+        core.write_json(path, rows)
+
+        recorded_voices = []
+        class MultiVoiceModel:
+            def infer(self, text, voice):
+                recorded_voices.append(voice)
+                return b'audio'
+            def save(self, audio, path):
+                with wave.open(str(path), 'wb') as out:
+                    out.setnchannels(1)
+                    out.setsampwidth(2)
+                    out.setframerate(16000)
+                    out.writeframes(b'\0\0' * 16000)
+
+        model = MultiVoiceModel()
+        synthesize(pid, model)
+        self.assertEqual(recorded_voices, ['Hải Đăng', 'Mai Anh'])
 
     def test_subtitle_rounding(self):
         self.assertEqual(core.stamp(59.9999), '00:01:00,000')

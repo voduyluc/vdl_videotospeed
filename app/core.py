@@ -41,7 +41,10 @@ def init_db():
             mix_narration_gain REAL DEFAULT 1.0,
             mix_ducking INTEGER DEFAULT 1,
             mix_ducking_attenuation REAL DEFAULT 16.0,
-            fit_duration INTEGER DEFAULT 1)''')
+            fit_duration INTEGER DEFAULT 1,
+            multi_speaker INTEGER DEFAULT 0,
+            voice_male TEXT DEFAULT 'Hải Đăng',
+            voice_female TEXT DEFAULT 'Mai Anh')''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
@@ -49,6 +52,12 @@ def init_db():
             c.execute('ALTER TABLE projects ADD COLUMN auto_fit INTEGER DEFAULT 1')
         if 'fit_duration' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN fit_duration INTEGER DEFAULT 1')
+        if 'multi_speaker' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN multi_speaker INTEGER DEFAULT 0')
+        if 'voice_male' not in cols:
+            c.execute("ALTER TABLE projects ADD COLUMN voice_male TEXT DEFAULT 'Hải Đăng'")
+        if 'voice_female' not in cols:
+            c.execute("ALTER TABLE projects ADD COLUMN voice_female TEXT DEFAULT 'Mai Anh'")
         if 'source_language' not in cols:
             c.execute("ALTER TABLE projects ADD COLUMN source_language TEXT DEFAULT 'ko'")
         if 'mix_background_gain' not in cols:
