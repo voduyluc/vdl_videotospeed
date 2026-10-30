@@ -1,169 +1,122 @@
 # Viet Voice Studio
 
-Web app cá nhân tạo audio thuyết minh tiếng Việt từ video tiếng **Hàn (`ko`)**, **Anh (`en`)**, hoặc **Nhật (`ja`)**, chạy model local trên **Ubuntu 24.04.4 LTS x86_64 / NVIDIA RTX 5060 8 GB**.
+Web app tạo thuyết minh tiếng Việt từ video **tiếng Hàn, Anh, Nhật và Trung**. Nhận dạng, dịch và tạo giọng chạy local; cần Internet để cài thư viện và tải model lần đầu.
 
-Pipeline: FFmpeg (tách STT & background stereo) → faster-whisper large-v3 INT8 → Qwen3-8B Q4_K_M dịch sang tiếng Việt → duyệt bản dịch → VieNeu-TTS v3 Turbo (giọng preset hoặc giọng clone) → căn timeline → xuất WAV/MP3 thuyết minh → phối âm nền (sidechain ducking) → xuất bản mixed WAV/MP3.
+```text
+Video → Nhận dạng lời thoại → Dịch / tham chiếu SRT → Tạo giọng Việt → Phối âm → Ghép video
+```
 
-### Tính năng mới nổi bật:
-- 🌐 **Hỗ trợ đa ngôn ngữ video nguồn**: Hàn (`ko` - mặc định), Anh (`en`), Nhật (`ja`). Đầu ra luôn là thuyết minh tiếng Việt chuẩn xác theo ngữ cảnh.
-- 🎙️ **Thư viện Voice Cloning cá nhân**: Tải lên mẫu giọng ngắn (khuyến nghị 3–8 giây sạch, 1 người nói), tạo câu nghe thử và chọn giọng clone đọc thuyết minh cho toàn bộ video. Tích hợp trực tiếp qua VieNeu-TTS local.
-- 🎚️ **Giữ âm thanh gốc làm nền & Sidechain Ducking**: Giữ toàn bộ âm thanh nền gốc stereo (nhạc, hiệu ứng, môi trường), tự động hạ âm lượng nền mượt mà khi giọng thuyết minh phát lên và nâng nền khi thuyết minh ngừng. Cho phép tùy chỉnh âm lượng nền/thuyết minh, độ nén ducking, nghe thử 15s và phối âm lại (Remix) tức thì không cần chạy lại STT/Dịch/TTS.
-- ⚡ **Ép thời lượng khi dịch & Thu gọn câu bằng LLM (AI Condensation)**:
-  - *Cách 1 (Ép thời lượng khi dịch)*: Tự động tính toán số từ tối đa (`max_words`) cho từng câu theo số giây nói và yêu cầu LLM dịch cô đọng ngay từ đầu (mặc định bật).
-  - *Cách 2 (AI thu gọn câu dài)*: Nút **🤖 AI thu gọn câu dài** tại màn hình duyệt cho phép dùng LLM viết lại các câu vượt thời lượng thật súc tích, giữ trọn ý chính và danh từ/hành động quan trọng, hoặc thu gọn từng câu đơn lẻ.
-- 🌐 **Ngôn ngữ hiển thị giao diện (UI)**: Chuyển đổi linh hoạt giữa Tiếng Việt và Tiếng Anh ngay góc trên thanh điều hướng, tự động lưu lựa chọn vào `localStorage`.
+## Tính năng
 
-## Cài đặt trên server
+- Upload video, xếp hàng và kéo thả đổi thứ tự xử lý.
+- Sửa bản dịch, nghe từng câu, dùng AI thu gọn câu dài và căn thời lượng.
+- Chọn giọng có sẵn hoặc clone từ mẫu giọng sạch khoảng 3–8 giây; quản lý thư viện giọng và nghe thử.
+- Chế độ nhiều giọng nam/nữ dựa trên ước lượng đặc tính âm thanh; có thể sửa lựa chọn từng câu.
+- Giữ âm thanh gốc stereo làm nền, tự hạ nền khi có thuyết minh (ducking); chỉnh âm lượng và phối âm lại.
+- Xuất WAV/MP3, phụ đề SRT và video MP4 có thuyết minh; lưu lịch sử phiên bản.
+- Giao diện Việt/Anh, xem tài nguyên máy và tiếp tục xử lý từ checkpoint sau lỗi.
 
-Yêu cầu: Ubuntu 24.04 LTS (bao gồm 24.04.4), Python 3.12 mặc định của hệ điều hành, tài khoản thường có sudo, NVIDIA driver hoạt động với RTX 5060 và CUDA 12.8. Chạy `nvidia-smi` trước. Installer **không cài hoặc thay driver NVIDIA**. Nên có RAM 32 GB, ổ SSD còn ít nhất 40 GB cho môi trường/model, cộng dung lượng video và audio. Lần đầu cần Internet để tải package và model.
+### Hai cách dùng SRT có sẵn
 
-Installer kiểm tra `VERSION_ID=24.04` trong `/etc/os-release` vì các bản cập nhật 24.04.x dùng chung giá trị này. CUDA toolkit được cài từ repository NVIDIA dành cho `ubuntu2404`. CI dùng Ubuntu 24.04 / Python 3.12.
+| Chế độ | Khi nào dùng | Cách xử lý |
+| --- | --- | --- |
+| **Dùng trực tiếp** | SRT đã khớp video | Lấy timeline SRT, bỏ qua STT; có bản Việt thì dùng bản dịch có sẵn |
+| **Tham chiếu nội dung** | SRT bị lệch thời gian hoặc khác cách chia câu | Luôn chạy STT lấy timeline video; dùng SRT nguồn để hiệu chỉnh text, SRT Việt để lấy bản dịch khớp; tự dịch phần thiếu |
 
-Clone repository vào thư mục do tài khoản của bạn sở hữu, đường dẫn không có khoảng trắng hoặc ký tự `%`:
+Chế độ tham chiếu dùng lại Qwen, không cần model mới. Có nhãn và bộ lọc **SRT cần kiểm tra**, giữ bản STT gốc và thông tin câu tham chiếu. Không bảo đảm khớp hết phụ đề khác bản dựng. Mỗi file SRT tối đa 5 MB.
+
+## Cấu hình máy
+
+Mức tối thiểu **đề xuất để bắt đầu** với bộ model mặc định, chưa phải kết quả benchmark tối thiểu trên mọi phần cứng:
+
+| Thành phần | Tối thiểu đề xuất | Khuyến nghị cho video 60–90 phút |
+| --- | --- | --- |
+| Hệ điều hành | Ubuntu 24.04 LTS x86_64, gồm 24.04.4 | Ubuntu 24.04.4 LTS |
+| CPU | 4 nhân x86_64 | 6–8 nhân |
+| RAM | 16 GB | 32 GB |
+| GPU | NVIDIA RTX 5060, 8 GB VRAM | 8 GB trở lên, tương thích cấu hình build |
+| Ổ đĩa | Khoảng 50 GB SSD trống cho cài đặt/model, **cộng dung lượng media** | 100 GB trở lên; tăng theo số video và phiên bản lưu |
+| Runtime | Python 3.12, NVIDIA driver tương thích CUDA 12.8 | Kiểm tra bằng `scripts/doctor.sh` |
+
+Script build GPU hiện cố định kiến trúc **Blackwell `sm_120`** cho RTX 5060. GPU khác cần điều chỉnh `CMAKE_CUDA_ARCHITECTURES` trong `scripts/build-llama.sh`; không phải mọi card 8 GB đều dùng nguyên script được. Bản cài mặc định yêu cầu GPU NVIDIA; chưa cung cấp bộ cài CPU-only.
+
+Mỗi thời điểm chỉ một model dùng GPU. Video dài được xử lý theo đoạn; thời gian chạy và dung lượng thực tế phụ thuộc nội dung, cấu hình và số phiên bản lưu.
+
+## Cài đặt
+
+Cài NVIDIA driver trước và kiểm tra `nvidia-smi`. Chạy bằng tài khoản thường có quyền sudo, tại đường dẫn không có khoảng trắng hoặc ký tự `%`:
 
 ```bash
-git clone <URL_REPOSITORY_CUA_BAN> ~/vdl_videotospeed
-cd ~/vdl_videotospeed
+git clone https://github.com/voduyluc/vdl_videotospeed.git
+cd vdl_videotospeed
 bash scripts/install.sh --install-cuda-toolkit
 ```
 
-Nếu đã có `nvcc` CUDA 12.8+ trong PATH, có thể dùng `bash scripts/install.sh`. Cờ `--install-cuda-toolkit` thêm repository chính thức NVIDIA và cài `cuda-toolkit-12-8`; không dùng gói driver/metapackage `cuda`.
+Installer cài dependency, CUDA Toolkit 12.8, build llama.cpp, tải model và tạo hai service systemd. **Không cài hoặc đổi NVIDIA driver.** Nếu đã có CUDA Toolkit phù hợp, dùng `bash scripts/install.sh`.
 
-Installer cài FFmpeg/build tools, ba Python venv, PyTorch CUDA 12.8, VieNeu, build llama-server cho kiến trúc CUDA 120, tải Qwen GGUF và warm-up VieNeu CPU. Whisper và asset riêng của VieNeu GPU được tải ở lần chạy đầu. Lỗi tải model có thể thử lại bằng `bash scripts/download-models.sh`. Không chạy installer bằng `sudo`; script tự dùng sudo cho apt/systemd.
-
-Mật khẩu được tạo tự động, in một lần và lưu trong `.env` (quyền 600). Tên đăng nhập: **admin**. Web mặc định ở `127.0.0.1:8080`.
-
-Từ máy cá nhân, tạo tunnel:
+Web chạy ở port **8080**. Đăng nhập bằng **admin** và mật khẩu installer tạo, lưu trong `.env`. Cấu hình mẫu hiện bind `0.0.0.0`; để chỉ truy cập qua SSH tunnel, đổi `HOST=127.0.0.1` trong `.env` rồi restart:
 
 ```bash
+bash scripts/stop.sh
+bash scripts/start.sh
+# Chạy lệnh sau trên máy cá nhân:
 ssh -L 8080:127.0.0.1:8080 user@server
 ```
 
-Sau đó mở <http://localhost:8080>. Nếu phục vụ qua domain, đặt reverse proxy HTTPS trước web; tăng giới hạn upload và timeout cho video lớn. HTTP Basic cần HTTPS khi truy cập qua mạng. Không mở port công khai chỉ bằng cách đổi HOST nếu chưa cấu hình lớp HTTPS.
+Mở <http://localhost:8080>. Nếu truy cập qua domain/mạng công cộng, đặt reverse proxy HTTPS và cấu hình giới hạn upload phù hợp cho video lớn.
 
-## Quản lý dịch vụ
+## Sử dụng
+
+1. Thêm video, chọn ngôn ngữ nguồn, giọng đọc và SRT nếu có. Hệ thống lấy track audio đầu tiên.
+2. Chờ STT và dịch. Có thể bật/tắt dừng để duyệt bản dịch.
+3. Kiểm tra câu dịch, đoạn SRT chưa khớp và câu quá dài; nghe thử, sửa hoặc dùng AI thu gọn.
+4. Tạo audio, nghe bản phối, chỉnh nền rồi ghép video nếu cần.
+5. Tải file trong phần kết quả và lịch sử phiên bản.
+
+Kết quả gồm `narration.wav/mp3` (chỉ lời Việt), `mixed.wav/mp3` (có nền), `vi.srt`, phụ đề nguồn `ko/en/ja/zh.srt` và `dubbed_video.mp4` nếu bật ghép video.
+
+## Quản lý
 
 ```bash
-bash scripts/start.sh       # Khởi động web và worker
-bash scripts/stop.sh        # Dừng; giữ checkpoint
-bash scripts/status.sh      # Xem trạng thái
-bash scripts/doctor.sh      # Kiểm tra driver, Torch CUDA, CTranslate2, GGUF
-bash scripts/update.sh      # Fetch, pull --ff-only, cập nhật dependency, test, restart
-bash scripts/uninstall.sh   # Gỡ service và venv; giữ source, .env, data, models
+bash scripts/start.sh       # Khởi động
+bash scripts/stop.sh        # Dừng, giữ checkpoint
+bash scripts/status.sh      # Trạng thái service
+bash scripts/doctor.sh      # Kiểm tra GPU/runtime
+bash scripts/update.sh      # Pull source, cập nhật dependency, test và restart
+bash scripts/uninstall.sh   # Gỡ service/venv; giữ source, cấu hình, model và dữ liệu
 ```
 
-Hai service `vietvoice-web` và `vietvoice-worker` tự khởi động cùng server, chạy bằng tài khoản cài đặt. Chỉ cài một instance trên mỗi máy. Không di chuyển thư mục sau khi cài; nếu cần di chuyển, gỡ service rồi cài lại tại vị trí mới.
+Service: `vietvoice-web` và `vietvoice-worker`. Xem log:
 
 ```bash
 journalctl -u vietvoice-web -u vietvoice-worker -f
 ```
 
-Log từng stage nằm tại `data/<project-id>/<stage>.log`. Khi update, phải commit/stash thay đổi source; `.env`, data/model/venv được gitignore. Nếu update thất bại sau khi dừng service, script để dịch vụ dừng và in commit cũ để bạn xử lý dependency/source trước khi start lại. Update không tự đổi phiên bản model hoặc nâng driver. Source mới chỉ được pull từ upstream branch đang tracking.
+Sửa cấu hình trong `.env`, sau đó stop/start. Các biến thường dùng: `HOST`, `PORT`, `DATA_DIR`, `APP_PASSWORD`, `MAX_UPLOAD_GB`, `LLAMA_CONTEXT` và `QUEUE_MODE` (`file`: ưu tiên từng video; `stage`: gom theo bước để tái sử dụng model).
 
-Uninstall không gỡ CUDA, driver hoặc apt package dùng chung; không xóa video/model/database. Có thể xóa thủ công các thư mục dữ liệu sau khi đã sao lưu nếu không còn cần.
+Dữ liệu nằm trong `data/`, model trong `models/`. Sao lưu dữ liệu và `.env` khi đã dừng worker. `.env`, model, media và môi trường Python được gitignore. Khi update, cần commit/stash thay đổi source; nếu update lỗi, kiểm tra thông báo trước khi start lại.
 
-## Cách sử dụng
+## Giới hạn và kiểm thử
 
-1. **Upload video & chọn ngôn ngữ nguồn**: Chọn file video và chọn ngôn ngữ nguồn (**Hàn**, **Anh**, hoặc **Nhật**). Mặc định là tiếng Hàn.
-2. **Theo dõi hàng đợi**: Pipeline tự động tách audio STT 16kHz mono và audio nền gốc 48kHz stereo, sau đó chạy STT bằng faster-whisper và dịch bằng LLM Qwen3-8B.
-3. **Quản lý Giọng Clone**: Nhấp nút **🎙️ Giọng Clone** ở thanh trên cùng để upload mẫu giọng ngắn (3-8s WAV/MP3), tạo câu nghe thử và lưu vào thư viện.
-4. **Ở trạng thái Chờ duyệt**:
-   - Sửa bản dịch, nhấn timestamp để nghe lại audio gốc.
-   - Chọn giọng thuyết minh: Có thể chọn giọng mẫu preset VieNeu hoặc bất kỳ giọng clone nào đã tạo.
-   - Nhấn **Lưu & tạo audio** để tiến hành tổng hợp giọng nói.
-5. **Căn timeline & Phối âm nền (Ducking)**:
-   - Hệ thống tự động căn chỉnh khoảng lặng và xuất `narration.wav/mp3` cùng phụ đề nguồn (`ko.srt`/`en.srt`/`ja.srt`) và `vi.srt`.
-   - Tiến hành bước **Phối âm nền** tự động áp dụng sidechain ducking để tạo `mixed.wav/mp3`.
-   - Có thể tinh chỉnh âm lượng nền, âm lượng thuyết minh, độ nén ducking, nghe thử 15 giây preview và bấm **Phối âm lại** ngay lập tức mà không cần chạy lại các bước trước.
-6. **Tải file kết quả**: Tải bản thuyết minh thuần (`narration.wav/mp3`) hoặc bản phối hoàn chỉnh (`mixed.wav/mp3`), kèm theo phụ đề song ngữ.
+- Chất lượng STT, dịch, matching và clone phụ thuộc đầu vào; cần duyệt kết quả trước khi sử dụng.
+- Nền vẫn chứa lời thoại gốc ở âm lượng nhỏ; ứng dụng không tách riêng lời thoại khỏi nhạc/hiệu ứng.
+- Chế độ tự fit có thể tăng tốc hoặc cắt đuôi câu dài. Dùng thu gọn và nghe lại để tránh mất ý.
+- Ước lượng nam/nữ không phải nhận diện chính xác từng nhân vật. Clone giọng không bảo đảm giống hoàn toàn mẫu.
+- Video không có audio/lời nói cần SRT dùng trực tiếp. Preview trong trình duyệt còn tùy codec video.
+- Chưa xác nhận toàn bộ pipeline trên mọi GPU. Nên thử video ngắn trước khi chạy phim dài.
 
-Nút **Nghe thử** bên cạnh mỗi câu phát audio TTS đã tạo cho câu đó; bấm **Dừng** để ngắt. Nếu chưa có audio hoặc bản dịch/giọng đã thay đổi, cần tạo lại trước khi nghe. Chỉ phát một đoạn nghe thử tại một thời điểm.
-
-### SRT trực tiếp hoặc tham chiếu nội dung
-
-Khi tạo project có upload SRT, chọn **Cách sử dụng SRT**:
-
-- **Dùng trực tiếp** (mặc định, tương thích project cũ): dùng timestamp SRT và bỏ qua STT. Chỉ nên chọn khi phụ đề đã khớp video. Nếu có cả hai file, chế độ cũ ghép nội dung theo thứ tự dòng nên cần hai file tương ứng nhau.
-- **Tham chiếu nội dung**: luôn chạy STT từ audio video. ID, timestamp và thông tin người nói của STT là chuẩn; timestamp của SRT upload không được ghi đè vào timeline. SRT nguồn giúp hiệu chỉnh text STT; SRT Việt cung cấp các câu dịch có thể tái sử dụng. Phần không khớp được tự dịch; nếu dịch thất bại thì báo lỗi để retry, không coi lời thoại nguồn là tiếng Việt.
-
-Chế độ tham chiếu dùng thuật toán tìm ứng viên văn bản trên CPU và **Qwen đang có**, không tải thêm model. Khớp nguồn giống hệt, đủ dài và không mơ hồ có thể dùng trực tiếp. Trường hợp khó hoặc xuyên ngôn ngữ được Qwen xác nhận theo cửa sổ nhỏ. Với SRT Việt, Qwen tạo cụm từ tìm kiếm tiếng Việt trước để tìm ứng viên trên toàn phụ đề; đây là nội dung phục vụ tìm kiếm, không phải bản dịch hoàn chỉnh dùng cho TTS. Sau matching chỉ dịch các đoạn còn thiếu. Matching và dịch dùng chung một lần nạp Qwen, kể cả ở chế độ hàng đợi theo stage.
-
-Hỗ trợ các nhóm liên tiếp tối đa 3 câu STT / 3 cue SRT, số dòng hai file không cần bằng nhau. Giữ thứ tự đối thoại, không dùng lại cùng cue cho các nhóm độc lập, loại các câu lặp có nhiều vị trí khả dĩ. Đối thoại quá ngắn, cue quá dài hoặc không có ứng viên rõ sẽ giữ STT/tự dịch. Không có bảo đảm khớp toàn bộ khi khác bản dựng, lời dịch quá thoát ý hoặc STT nhận sai nặng. Điểm do LLM trả về chỉ là tín hiệu sàng lọc, không phải xác suất đã được hiệu chuẩn; cần nghe kiểm tra các đoạn quan trọng.
-
-Trong editor, nhãn **Đã dùng SRT / SRT cần kiểm tra** cho biết kết quả; rê chuột để xem cue được dùng và lý do, mở **STT / nội dung trước hiệu chỉnh** để đối chiếu. Tab **SRT cần kiểm tra** lọc các đoạn không khớp hoặc không chắc chắn. Các đoạn này vẫn có thể đã được tự dịch thành công. Chỉnh sửa thủ công giữ lịch sử tham chiếu.
-
-File upload giới hạn 5 MB mỗi SRT, phải có ít nhất một cue hợp lệ. Dữ liệu project lưu `uploaded-source.srt`, `uploaded-vi.srt`, `subtitle-references.json`, bản STT thô `stt-original.json` và checkpoint matching trong `reference-run.json` / `segments.json`. Retry giữ quyết định từng batch và cache cụm từ tìm kiếm; nếu đổi file tham chiếu hoặc timeline thì cần reset/tạo project mới. **Chạy lại từ đầu** giữ file tham chiếu nhưng xóa kết quả matching để làm lại. Project không có audio/lời nói không dùng được chế độ tham chiếu; hãy chọn dùng SRT trực tiếp.
-
-Sau cập nhật, restart worker/web để migration SQLite thêm `subtitle_mode`, mặc định `direct` cho project cũ. Kiểm thử matching dùng mock Qwen; chất lượng đối chiếu thực tế cần thử với phụ đề/video trên server GPU.
-
-Audio xuất có timeline bắt đầu từ 0, gồm khoảng lặng và lời Việt. Hệ thống sử dụng khoảng trống trước câu kế tiếp và tăng tốc tối đa `MAX_SPEED`, mặc định 1.18. Không cắt lời để ép vừa thời gian. Nếu vẫn tràn, không xuất bản audio bị lệch; hiện cần sửa thủ công, chưa có vòng LLM tự rút gọn.
-
-Browser preview dùng video gốc. MP4 H.264/AAC tương thích phổ biến; MKV/HEVC hoặc codec trình duyệt không hỗ trợ vẫn có thể xử lý audio nhưng cần chuyển video sang MP4 để xem trực tiếp. Không xuất video ghép, không tách nhạc nền, không nhận diện người nói hay clone giọng trong MVP.
-
-## Cấu hình
-
-Sửa `.env`, sau đó `bash scripts/stop.sh && bash scripts/start.sh`.
-
-| Biến | Ý nghĩa |
-| --- | --- |
-| `APP_PASSWORD` | Mật khẩu HTTP Basic của tài khoản admin; không để trống |
-| `HOST`, `PORT` | Bind web; mặc định 0.0.0.0:8080 (hoặc 127.0.0.1 nếu chỉ dùng SSH tunnel) |
-| `DATA_DIR` | Vị trí SQLite và dữ liệu video; đường dẫn tương đối tính từ thư mục repo |
-| `MAX_UPLOAD_GB` | Giới hạn dung lượng từng file được lưu, mặc định 12 GB |
-| `WHISPER_MODEL` | Mặc định large-v3; có thể thử model nhỏ hơn khi thiếu VRAM |
-| `WHISPER_DEVICE`, `WHISPER_COMPUTE` | Mặc định cuda / int8_float16 |
-| `STT_CHUNK_SECONDS` | Khối checkpoint STT, mặc định 300 giây |
-| `LLAMA_MODEL`, `LLAMA_BIN` | Đường dẫn GGUF và llama-server |
-| `LLAMA_CONTEXT` | Context dịch, mặc định 4096 token |
-| `TTS_VOICE` | Giọng preset cho project mới |
-| `MAX_SPEED` | Tốc độ tối đa khi fit timeline, 1–2; nên giữ gần 1 |
-| `QUEUE_MODE` | `file` hoặc `stage` |
-
-`file`: video cũ nhất được ưu tiên qua các bước; khi chờ duyệt, chuyển sang video tiếp theo.
-
-`stage`: ưu tiên extract → STT → dịch → TTS → export. Các project đang sẵn sàng ở cùng stage được chụp thành một đợt tối đa 32 project; **dùng chung một lần nạp model**. Video vẫn được xử lý tuần tự. Hủy một job trong đợt sẽ ngắt process của đợt; các job khác tiếp tục từ checkpoint ở lượt sau, các job đã hoàn thành giữ nguyên trạng thái. Mỗi thời điểm chỉ một process model sở hữu GPU. Chế độ này thiên về throughput; dùng `file` nếu muốn có kết quả từng video sớm.
-
-Trong phiên bản đầu, TTS batch size là 1 để giảm rủi ro VRAM. Việc giữ model trong cả stage/đợt vẫn tránh nạp lại cho từng câu hoặc video. Không bảo đảm thời gian xử lý trước khi benchmark trên GPU thực tế.
-
-Có thể thêm thuật ngữ cho một project bằng file UTF-8 `data/<id>/glossary.txt` trước bước dịch. Nội dung này đi vào prompt cùng ba câu trước đó. Các bản dịch đã có được giữ khi retry.
-
-STT cắt cửa sổ 5 phút không chồng lấn để checkpoint đơn giản và không trùng thoại; câu nằm đúng biên có thể nhận dạng kém, cần kiểm tra khi duyệt. Timestamp lấy từ Whisper, chưa dùng forced alignment. Dịch theo nhóm 8 câu, kiểm tra ID, retry tối đa ba lần và lưu từng nhóm. Không tự gộp/tách câu; editor/API giữ nguyên ID/thứ tự.
-
-## Kiến trúc source
-
-```text
-app/main.py           API, upload, editor, tải file, authentication
-app/runner.py         SQLite queue, GPU độc quyền, cancel/restart
-app/batch.py          Chạy nhiều project cùng stage với model dùng chung
-app/model_worker.py   faster-whisper và VieNeu SDK trong process riêng
-app/translate.py      Quản lý llama-server local, dịch JSON và checkpoint
-app/media.py          FFmpeg, streaming WAV, fit timeline và cảnh báo
-web/                  Giao diện HTML/CSS/JavaScript, không cần Node hoặc CDN
-scripts/              Cài đặt và quản lý systemd Ubuntu
-tests/                API, retry/cache, phụ đề và ghép audio FFmpeg
-```
-
-Giao diện dùng JavaScript thuần để giảm dependency/build cho ứng dụng cá nhân. Backend API tách biệt nên có thể thay bằng React sau này.
-
-SQLite WAL lưu trạng thái; JSON được ghi atomic bằng temporary file rồi rename. STT có checkpoint từng khối; TTS cache SHA-256 theo text + giọng + phiên bản model. Sửa bản dịch làm mất hiệu lực export cũ. Mỗi stage ở process riêng; khi thoát, tài nguyên GPU được giải phóng. Worker dùng file lock để ngăn hai runner cùng xử lý database. Dừng dịch vụ ngắt cả process group gồm llama-server.
-
-## Kiểm thử
+Chạy test local (không dùng GitHub Actions):
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
-bash scripts/doctor.sh
 ```
 
-Test dùng database tạm riêng, không chạy model thật hoặc thay đổi dữ liệu dự án. Kiểm thử media chạy FFmpeg thật nếu có trên PATH. Có thể dùng `FFMPEG_BIN=/path/to/ffmpeg` cho kiểm thử. Syntax Python/Bash/JavaScript và API/cache/timeline được kiểm tra trong môi trường phát triển; **cài đặt systemd Ubuntu và toàn pipeline GPU chưa được xác minh trên server thật**. Sau cài đặt, chạy một video vài phút trước, rồi benchmark video 60–90 phút và đo VRAM bằng `nvidia-smi`.
+Test model dùng mock; test media chạy FFmpeg thật nếu có. Lần kiểm tra phát triển gần nhất: 69/70 test đạt; test thời lượng phối âm `test_mix_creates_mixed_audio_files` còn lỗi có sẵn, cần kiểm tra trên môi trường triển khai. Test không thay thế việc đánh giá chất lượng model trên video thực tế.
 
-Sao lưu `.env`, toàn bộ `DATA_DIR` và model/config cần giữ khi đã dừng worker. Không sửa/xóa JSON/checkpoint trong lúc job đang chạy. Đổi model STT trên project đã có checkpoint cần tạo project mới để tránh trộn kết quả hai model.
+## Công nghệ và bản quyền
 
-## Nguồn model và runtime
+FastAPI, SQLite, FFmpeg, faster-whisper/Whisper large-v3, Qwen3-8B GGUF Q4_K_M qua llama.cpp và VieNeu-TTS v3 Turbo local. Giao diện JavaScript thuần, không cần Node để chạy ứng dụng.
 
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-- [Qwen3-8B GGUF](https://huggingface.co/Qwen/Qwen3-8B-GGUF)
-- [llama.cpp](https://github.com/ggml-org/llama.cpp), runtime mặc định pin tag b6650
-- [VieNeu-TTS](https://github.com/pnnbao97/VieNeu-TTS), dùng SDK 3.8.3 / v3 Turbo local
-- [NVIDIA CUDA Linux installation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/)
+Mã nguồn do dự án cung cấp theo **[MIT License](LICENSE)**. Copyright © 2026 **voduyluc**. Có thể sử dụng, sửa đổi và phân phối theo điều kiện trong LICENSE.
 
-Model/dependency giữ giấy phép upstream tương ứng. VieNeu là dependency cài trong môi trường TTS của dự án; không gọi dịch vụ TTS bên ngoài.
+Model, thư viện, giọng mẫu và tài sản bên thứ ba giữ giấy phép riêng; xem **[Third-party notices](THIRD_PARTY_NOTICES.md)**. Giấy phép mã nguồn không cấp quyền đối với video, phụ đề, âm nhạc hoặc giọng nói của người khác. Chỉ sử dụng nội dung và mẫu giọng bạn có quyền sử dụng.
