@@ -121,7 +121,7 @@ def main():
     step_order = {'extract': 0, 'stt': 1, 'translate': 2, 'condense': 3, 'tts': 4, 'export': 5, 'mix': 6, 'mux': 7}
     while not stopping:
         with db() as c:
-            rows = [dict(r) for r in c.execute("SELECT * FROM projects WHERE state='queued' ORDER BY created")]
+            rows = [dict(r) for r in c.execute("SELECT * FROM projects WHERE state='queued' ORDER BY COALESCE(sort_order, created) ASC, created ASC")]
         # Cancel queued jobs even when another model is currently idle.
         for row in rows:
             if row['cancel']:

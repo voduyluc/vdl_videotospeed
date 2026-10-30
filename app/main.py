@@ -146,7 +146,19 @@ def set_voice_top(vid: str, body: VoiceTopBody):
 @app.get('/api/projects')
 def projects():
     with db() as c:
-        return [dict(r) for r in c.execute("SELECT * FROM projects WHERE name NOT LIKE 'Voice Preview:%' ORDER BY created")]
+        return [dict(r) for r in c.execute("""
+            SELECT * FROM projects 
+            WHERE name NOT LIKE 'Voice Preview:%' 
+            ORDER BY 
+                CASE 
+                    WHEN state = 'completed' THEN 1
+                    WHEN state = 'running' THEN 2
+                    WHEN state IN ('review', 'failed') THEN 3
+                    ELSE 4
+                END ASC,
+                COALESCE(sort_order, created) ASC,
+                created ASC
+        """)]
 
 
 @app.post('/api/projects')
@@ -252,18 +264,32 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
                         source_language,fit_duration,multi_speaker,voice_male,voice_female,
                         mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at,
-                        mux_video,pause_before_mux,auto_trim_overflow,trim_threshold_pct)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        mux_video,pause_before_mux,auto_trim_overflow,trim_threshold_pct,sort_order)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', now_ts,
                        selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
                        multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts,
-                       mux_video_flag, pause_mux_flag, trim_overflow_flag, trim_pct_val))
+                       mux_video_flag, pause_mux_flag, trim_overflow_flag, trim_pct_val, now_ts))
     except Exception:
         shutil.rmtree(p)
         raise
     finally:
         file.file.close()
     return {'id': pid}
+
+
+class ReorderRequest(BaseModel):
+    project_ids: list[str]
+
+
+@app.post('/api/projects/reorder')
+def reorder_projects(body: ReorderRequest):
+    if not body.project_ids:
+        return {'ok': True}
+    with db() as c:
+        for idx, pid in enumerate(body.project_ids):
+            c.execute('UPDATE projects SET sort_order = ? WHERE id = ?', (float(idx), pid))
+    return {'ok': True}
 
 
 @app.get('/api/projects/{pid}')
@@ -466,7 +492,11 @@ def condense_project(pid: str, body: CondenseRequest | None = None):
     target_ids = body.segment_ids if body and body.segment_ids else []
     p = folder(pid)
     write_json(p / 'condense-targets.json', target_ids)
-    update(pid, state='queued', step='condense', progress='Đang chờ AI thu gọn câu...')
+    with db() as c:
+        row_min = c.execute("SELECT MIN(sort_order) as m FROM projects WHERE state = 'queued'").fetchone()
+        min_order = row_min['m'] if row_min and row_min['m'] is not None else time.time()
+        new_order = min_order - 10.0
+    update(pid, state='queued', step='condense', progress='Đang chờ AI thu gọn câu...', sort_order=new_order)
     return {'ok': True, 'queued': True}
 
 
@@ -504,13 +534,21 @@ def action(pid: str, action: str):
         if not (folder(pid) / 'narration.wav').exists():
             raise HTTPException(409, 'Cần tạo audio thuyết minh trước khi phối âm')
         (folder(pid) / 'dubbed_video.mp4').unlink(missing_ok=True)
-        update(pid, state='queued', step='mix', cancel=0, error=None, completed_at=None, progress='Đang chờ phối âm')
+        with db() as c:
+            row_min = c.execute("SELECT MIN(sort_order) as m FROM projects WHERE state = 'queued'").fetchone()
+            min_order = row_min['m'] if row_min and row_min['m'] is not None else time.time()
+            new_order = min_order - 10.0
+        update(pid, state='queued', step='mix', cancel=0, error=None, completed_at=None, progress='Đang chờ phối âm', sort_order=new_order)
         return {'ok': True}
     if action == 'mux':
         has_audio = any((folder(pid) / f).exists() for f in ('mixed.wav', 'mixed.mp3', 'narration.wav', 'narration.mp3'))
         if not has_audio:
             raise HTTPException(409, 'Cần có audio thuyết minh/phối âm trước khi ghép vào video')
-        update(pid, state='queued', step='mux', cancel=0, error=None, completed_at=None, progress='Đang chờ ghép vào video')
+        with db() as c:
+            row_min = c.execute("SELECT MIN(sort_order) as m FROM projects WHERE state = 'queued'").fetchone()
+            min_order = row_min['m'] if row_min and row_min['m'] is not None else time.time()
+            new_order = min_order - 10.0
+        update(pid, state='queued', step='mux', cancel=0, error=None, completed_at=None, progress='Đang chờ ghép vào video', sort_order=new_order)
         return {'ok': True}
     if action not in ('start', 'resume', 'generate') or row['state'] not in ('ready', 'review', 'failed', 'cancelled', 'completed'):
         raise HTTPException(409, 'Action unavailable')
@@ -520,10 +558,15 @@ def action(pid: str, action: str):
             raise HTTPException(400, 'Every segment needs a translation')
         for name in ('dubbed_video.mp4', 'mixed.mp3', 'mixed.wav', 'narration.wav', 'narration.mp3', 'tts-manifest.json'):
             (folder(pid) / name).unlink(missing_ok=True)
+    with db() as c:
+        row_min = c.execute("SELECT MIN(sort_order) as m FROM projects WHERE state = 'queued'").fetchone()
+        min_order = row_min['m'] if row_min and row_min['m'] is not None else time.time()
+        new_order = min_order - 10.0
     update(pid, state='queued', cancel=0, error=None, completed_at=None,
            started_at=time.time() if action == 'start' or not row.get('started_at') else row.get('started_at'),
            step='tts' if action == 'generate' else row['step'],
-           progress='Đang chờ xử lý...' if action in ('start', 'resume') else 'Đang chờ tạo thuyết minh')
+           progress='Đang chờ xử lý...' if action in ('start', 'resume') else 'Đang chờ tạo thuyết minh',
+           sort_order=new_order)
     return {'ok': True}
 
 

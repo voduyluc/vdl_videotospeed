@@ -773,6 +773,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(segs[0]['translation'], '')
         self.assertTrue((p_dir / 'en.srt').exists())
 
+    def test_projects_ordering_and_reorder(self):
+        # Create 3 projects
+        r1 = self.client.post('/api/projects', files={'file': ('p1.mp4', b'v1', 'video/mp4')})
+        r2 = self.client.post('/api/projects', files={'file': ('p2.mp4', b'v2', 'video/mp4')})
+        r3 = self.client.post('/api/projects', files={'file': ('p3.mp4', b'v3', 'video/mp4')})
+        pid1 = r1.json()['id']
+        pid2 = r2.json()['id']
+        pid3 = r3.json()['id']
+
+        # Set p1 to review, p2 to running, p3 to completed
+        core.update(pid1, state='review')
+        core.update(pid2, state='running')
+        core.update(pid3, state='completed')
+
+        # Order must be: completed (p3), running (p2), review/waiting confirm (p1)
+        res = self.client.get('/api/projects').json()
+        ids = [p['id'] for p in res if p['id'] in (pid1, pid2, pid3)]
+        self.assertEqual(ids, [pid3, pid2, pid1])
+
+        # Test reorder endpoint
+        r_reorder = self.client.post('/api/projects/reorder', json={'project_ids': [pid2, pid1, pid3]})
+        self.assertEqual(r_reorder.status_code, 200)
+
+        # When restarting task at bottom (e.g. p1), it jumps to top of its group
+        core.update(pid1, state='review')
+        r_resume = self.client.post(f'/api/projects/{pid1}/resume')
+        self.assertEqual(r_resume.status_code, 200)
+        proj1 = self.client.get(f'/api/projects/{pid1}').json()
+        self.assertEqual(proj1['state'], 'queued')
+
 
 class PipelineTests(unittest.TestCase):
     def test_stt_checkpoint_reuse_and_timestamp_normalization(self):

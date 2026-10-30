@@ -120,12 +120,20 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* Project Row in Sidebar */
-.project-row{display:flex;align-items:stretch;margin:8px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;transition:border-color .2s}
+.project-row{display:flex;align-items:stretch;margin:8px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;transition:border-color .2s, transform .15s, opacity .15s;position:relative}
 .project-row.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .project-row:hover{border-color:var(--muted)}
 .project-row.active:hover{border-color:var(--accent)}
-.project-select-btn{flex:1;min-width:0;text-align:left;background:transparent;color:var(--text);border:0;border-radius:0;padding:10px 12px;font:inherit;cursor:pointer;overflow-wrap:anywhere}
-.project-select-btn small{display:block;font-weight:400;color:var(--muted);margin-top:5px;font-size:12px}
+.project-drag-handle{display:flex;align-items:center;justify-content:center;padding:0 6px 0 8px;color:#4a5f78;cursor:grab;font-size:13px;user-select:none;transition:color .15s}
+.project-drag-handle:hover{color:var(--accent)}
+.project-row.dragging{opacity:.4;border:1px dashed var(--accent);background:#101720}
+.project-row.drag-over-top{border-top:2px solid var(--accent)!important}
+.project-row.drag-over-bottom{border-bottom:2px solid var(--accent)!important}
+.project-select-btn{flex:1;min-width:0;text-align:left;background:transparent;color:var(--text);border:0;border-radius:0;padding:10px 10px 10px 4px;font:inherit;cursor:pointer;overflow-wrap:anywhere}
+.project-btn-title{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;line-height:1.3}
+.project-status-icon{font-size:13px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
+.project-status-icon.spin{animation:spin 1.2s linear infinite}
+.project-select-btn small{display:block;font-weight:400;color:var(--muted);margin-top:4px;font-size:11.5px;line-height:1.3}
 .project-del-btn{background:transparent;color:var(--muted);border:0;border-left:1px solid var(--line);border-radius:0;padding:0 12px;cursor:pointer;font-size:14px;transition:all .2s;display:flex;align-items:center;justify-content:center}
 .project-del-btn:hover{background:#3b1c18;color:#ff8066;border-color:#5c241c}
 .btn-danger{background:#2d1714;color:#ff8a73;border:1px solid #ff806644}

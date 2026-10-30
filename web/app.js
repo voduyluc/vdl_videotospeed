@@ -614,6 +614,27 @@ function getStatusLabel(state){
   return t('status_' + state);
 }
 
+function getProjectStatusIcon(p) {
+  // Returns { icon, label, cls }
+  if (p.state === 'completed') {
+    return { icon: '✅', label: 'Done', cls: 'status-done' };
+  }
+  if (p.state === 'running') {
+    return { icon: '⚡', label: 'Inprogress', cls: 'status-running spin' };
+  }
+  if (p.state === 'review') {
+    return { icon: '⏸️', label: 'Waiting Confirm', cls: 'status-review' };
+  }
+  if (p.state === 'failed') {
+    return { icon: '⚠️', label: 'Waiting Confirm (Error)', cls: 'status-failed' };
+  }
+  if (p.state === 'cancelled') {
+    return { icon: '⏹️', label: 'Cancelled', cls: 'status-cancelled' };
+  }
+  // queued, ready, etc.
+  return { icon: '⏳', label: 'Waiting', cls: 'status-waiting' };
+}
+
 const VOICE_LABELS = {
   vi: {
     "Hải Đăng": "Hải Đăng (Nam Bắc - Chuẩn/Mặc định)",
@@ -1968,25 +1989,114 @@ async function refresh(force=false){
       api('/projects'),
       fetchVoicesAll()
     ]);
-    $('#projects').replaceChildren();
-    for(const p of all){
-      const row = el('div', undefined, 'project-row' + (p.id === selected ? ' active' : ''));
-      const b = el('button', p.name, 'project-select-btn');
-      b.append(el('small', `${getStatusLabel(p.state) || p.state} · ${p.progress || p.step}`));
-      b.onclick = async () => {
-        if(dirty && !confirm(t('confirmDiscardChanges'))) return;
-        selected = p.id;
-        page = 0;
-        dirty = false;
-        drafts.clear();
-        filterWarnings = false;
-        await refresh(true);
-      };
-      const delBtn = el('button', '🗑️', 'project-del-btn');
-      delBtn.title = t('deleteProjectTitle');
-      delBtn.onclick = (e) => { e.stopPropagation(); deleteProject(p); };
-      row.append(b, delBtn);
-      $('#projects').append(row);
+    const projectsContainer = $('#projects');
+    if (!window.isReorderingProjects) {
+      projectsContainer.replaceChildren();
+      for(const p of all){
+        const row = el('div', undefined, 'project-row' + (p.id === selected ? ' active' : ''));
+        row.setAttribute('data-id', p.id);
+        row.draggable = true;
+
+        const handle = el('span', '⠿', 'project-drag-handle');
+        handle.title = 'Kéo thả để sắp xếp thứ tự';
+
+        const b = el('button', undefined, 'project-select-btn');
+        const titleSpan = el('span', undefined, 'project-btn-title');
+        const st = getProjectStatusIcon(p);
+        const iconSpan = el('span', st.icon, 'project-status-icon ' + st.cls);
+        iconSpan.title = st.label;
+        const nameText = el('span', p.name);
+        titleSpan.append(iconSpan, nameText);
+
+        const metaText = el('small', `${st.label} · ${getStatusLabel(p.state) || p.state} · ${p.progress || p.step}`);
+        b.append(titleSpan, metaText);
+
+        b.onclick = async () => {
+          if(dirty && !confirm(t('confirmDiscardChanges'))) return;
+          selected = p.id;
+          page = 0;
+          dirty = false;
+          drafts.clear();
+          filterWarnings = false;
+          await refresh(true);
+        };
+        const delBtn = el('button', '🗑️', 'project-del-btn');
+        delBtn.title = t('deleteProjectTitle');
+        delBtn.onclick = (e) => { e.stopPropagation(); deleteProject(p); };
+        row.append(handle, b, delBtn);
+
+        // Drag and drop event listeners
+        row.addEventListener('dragstart', (e) => {
+          window.draggedProjectId = p.id;
+          window.isReorderingProjects = true;
+          row.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', p.id);
+        });
+
+        row.addEventListener('dragend', () => {
+          row.classList.remove('dragging');
+          window.draggedProjectId = null;
+          document.querySelectorAll('.project-row').forEach(r => {
+            r.classList.remove('drag-over-top', 'drag-over-bottom');
+          });
+          setTimeout(() => { window.isReorderingProjects = false; }, 300);
+        });
+
+        row.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if (!window.draggedProjectId || window.draggedProjectId === p.id) return;
+          e.dataTransfer.dropEffect = 'move';
+          const rect = row.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            row.classList.add('drag-over-top');
+            row.classList.remove('drag-over-bottom');
+          } else {
+            row.classList.add('drag-over-bottom');
+            row.classList.remove('drag-over-top');
+          }
+        });
+
+        row.addEventListener('dragleave', () => {
+          row.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+
+        row.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          row.classList.remove('drag-over-top', 'drag-over-bottom');
+          const draggedId = window.draggedProjectId || e.dataTransfer.getData('text/plain');
+          if (!draggedId || draggedId === p.id) return;
+
+          const rows = Array.from(projectsContainer.querySelectorAll('.project-row'));
+          const targetIndex = rows.findIndex(r => r.getAttribute('data-id') === p.id);
+          const draggedRow = rows.find(r => r.getAttribute('data-id') === draggedId);
+          if (!draggedRow || targetIndex === -1) return;
+
+          const rect = row.getBoundingClientRect();
+          const insertBefore = e.clientY < (rect.top + rect.height / 2);
+          if (insertBefore) {
+            projectsContainer.insertBefore(draggedRow, row);
+          } else {
+            projectsContainer.insertBefore(draggedRow, row.nextSibling);
+          }
+
+          // Gather new order of project IDs
+          const newOrderIds = Array.from(projectsContainer.querySelectorAll('.project-row')).map(r => r.getAttribute('data-id'));
+          try {
+            await api('/projects/reorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project_ids: newOrderIds })
+            });
+            await refresh(true);
+          } catch (err) {
+            console.error('Failed to save project order', err);
+          }
+        });
+
+        projectsContainer.append(row);
+      }
     }
     if(!all.length){
       selected = null;

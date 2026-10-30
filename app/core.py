@@ -49,7 +49,8 @@ def init_db():
             mux_video INTEGER DEFAULT 1,
             pause_before_mux INTEGER DEFAULT 1,
             auto_trim_overflow INTEGER DEFAULT 0,
-            trim_threshold_pct INTEGER DEFAULT 120)''')
+            trim_threshold_pct INTEGER DEFAULT 120,
+            sort_order REAL DEFAULT 0)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
@@ -85,6 +86,8 @@ def init_db():
             c.execute('ALTER TABLE projects ADD COLUMN auto_trim_overflow INTEGER DEFAULT 0')
         if 'trim_threshold_pct' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN trim_threshold_pct INTEGER DEFAULT 120')
+        if 'sort_order' not in cols:
+            c.execute('ALTER TABLE projects ADD COLUMN sort_order REAL DEFAULT 0')
         c.execute('''CREATE TABLE IF NOT EXISTS voices (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, created REAL NOT NULL,
             sample_file TEXT NOT NULL, version TEXT NOT NULL,
