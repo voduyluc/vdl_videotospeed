@@ -30,7 +30,7 @@ def auth(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(401, 'Authentication required', headers={'WWW-Authenticate': 'Basic'})
 
 
-app = FastAPI(title='Viet Voice Studio', dependencies=[Depends(auth)])
+app = FastAPI(title='VDL - Video to vietnamese audio', dependencies=[Depends(auth)])
 
 
 @app.middleware("http")

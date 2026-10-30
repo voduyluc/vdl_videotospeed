@@ -1,6 +1,6 @@
 # Third-party notices
 
-Viet Voice Studio sử dụng các dự án và model dưới đây. Copyright của từng thành phần thuộc tác giả tương ứng; LICENSE MIT ở repository này chỉ áp dụng cho mã nguồn do Viet Voice Studio cung cấp.
+VDL - Video to vietnamese audio sử dụng các dự án và model dưới đây. Copyright của từng thành phần thuộc tác giả tương ứng; LICENSE MIT ở repository này chỉ áp dụng cho mã nguồn do dự án cung cấp.
 
 | Thành phần | Nguồn và giấy phép |
 | --- | --- |

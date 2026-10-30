@@ -37,7 +37,7 @@ for component in worker web; do
   unit="$(mktemp)"
   cat > "$unit" <<EOF
 [Unit]
-Description=Viet Voice Studio $component
+Description=VDL - Video to vietnamese audio $component
 After=network-online.target
 Wants=network-online.target
 

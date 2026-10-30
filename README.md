@@ -1,4 +1,4 @@
-# Viet Voice Studio
+# VDL - Video to vietnamese audio
 
 Web app tạo thuyết minh tiếng Việt từ video **tiếng Hàn, Anh, Nhật và Trung**. Nhận dạng, dịch và tạo giọng chạy local; cần Internet để cài thư viện và tải model lần đầu.
 
