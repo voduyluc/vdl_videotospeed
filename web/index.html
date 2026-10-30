@@ -67,7 +67,14 @@
         <label style="font-weight: 600; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 6px;">
           <span data-i18n="uploadSubHeading">📝 Tải lên phụ đề có sẵn (Tùy chọn)</span>
         </label>
-        <p class="hint-text" style="margin-top: 2px; margin-bottom: 10px;" data-i18n="uploadSubHint">Nếu đã có file phụ đề (.srt), hệ thống sẽ bỏ qua bước trích xuất stt chỉ trích xuất âm thanh để làm nền.</p>
+        <p class="hint-text" style="margin-top: 2px; margin-bottom: 10px;" data-i18n="uploadSubHint">Dùng trực tiếp lấy timeline SRT. Tham chiếu luôn chạy STT, giữ timeline video và chỉ lấy nội dung khớp.</p>
+        <div class="field-block">
+          <label for="modalSubtitleMode" data-i18n="subtitleModeLabel">Cách sử dụng SRT</label>
+          <select id="modalSubtitleMode">
+            <option value="direct" data-i18n="subtitleDirect">Dùng trực tiếp — SRT đã khớp video</option>
+            <option value="reference" data-i18n="subtitleReference">Tham chiếu nội dung — timeline từ video</option>
+          </select>
+        </div>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <!-- Subtitle Tiếng Gốc -->

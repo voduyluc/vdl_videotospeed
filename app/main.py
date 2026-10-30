@@ -170,7 +170,10 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
            mix_ducking: int = Form(1), mix_ducking_attenuation: float = Form(16.0),
            mux_video: int = Form(1), pause_before_mux: int = Form(1),
            auto_trim_overflow: int = Form(0), trim_threshold_pct: int = Form(120),
-           subtitle_src: UploadFile = File(None), subtitle_vi: UploadFile = File(None)):
+           subtitle_src: UploadFile = File(None), subtitle_vi: UploadFile = File(None),
+           subtitle_mode: str = Form('direct')):
+    if subtitle_mode not in ('direct', 'reference'):
+        raise HTTPException(400, 'subtitle_mode must be direct or reference')
     pid = secrets.token_hex(16)
     p = folder(pid)
     limit = int(float(os.getenv('MAX_UPLOAD_GB', '12')) * 1024**3)
@@ -207,7 +210,11 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
         raw_vi = None
         if subtitle_vi and getattr(subtitle_vi, 'filename', None):
             try:
-                raw_vi = subtitle_vi.file.read()
+                raw_vi = subtitle_vi.file.read(5 * 1024 * 1024 + 1)
+                if len(raw_vi) > 5 * 1024 * 1024:
+                    raise HTTPException(413, 'Subtitle exceeds 5 MB')
+            except HTTPException:
+                raise
             except Exception:
                 raw_vi = None
             finally:
@@ -216,7 +223,11 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
         raw_src = None
         if subtitle_src and getattr(subtitle_src, 'filename', None):
             try:
-                raw_src = subtitle_src.file.read()
+                raw_src = subtitle_src.file.read(5 * 1024 * 1024 + 1)
+                if len(raw_src) > 5 * 1024 * 1024:
+                    raise HTTPException(413, 'Subtitle exceeds 5 MB')
+            except HTTPException:
+                raise
             except Exception:
                 raw_src = None
             finally:
@@ -224,6 +235,16 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
 
         parsed_vi = parse_srt(raw_vi) if raw_vi else []
         parsed_src = parse_srt(raw_src) if raw_src else []
+        if (raw_vi is not None and not parsed_vi) or (raw_src is not None and not parsed_src):
+            raise HTTPException(400, 'File SRT không có câu phụ đề hợp lệ')
+        if subtitle_mode == 'reference':
+            write_json(p / 'subtitle-references.json', {'source': parsed_src, 'vi': parsed_vi})
+            if raw_src:
+                (p / 'uploaded-source.srt').write_bytes(raw_src)
+            if raw_vi:
+                (p / 'uploaded-vi.srt').write_bytes(raw_vi)
+            # References never supply the canonical video timeline.
+            parsed_src, parsed_vi = [], []
 
         uploaded_segments = []
         if parsed_vi:
@@ -264,12 +285,12 @@ def upload(file: UploadFile, voice: str = Form(None), pause_review: int = Form(1
             c.execute('''INSERT INTO projects(id,name,state,step,created,voice,pause_review,auto_fit,
                         source_language,fit_duration,multi_speaker,voice_male,voice_female,
                         mix_background_gain,mix_narration_gain,mix_ducking,mix_ducking_attenuation,started_at,
-                        mux_video,pause_before_mux,auto_trim_overflow,trim_threshold_pct,sort_order)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        mux_video,pause_before_mux,auto_trim_overflow,trim_threshold_pct,sort_order,subtitle_mode)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (pid, Path(file.filename or 'Video').name, 'queued', 'extract', now_ts,
                        selected_voice, pause_flag, auto_fit_flag, src_lang, fit_flag,
                        multi_flag, v_male, v_female, bg_gain, narr_gain, duck_flag, duck_atten, now_ts,
-                       mux_video_flag, pause_mux_flag, trim_overflow_flag, trim_pct_val, now_ts))
+                       mux_video_flag, pause_mux_flag, trim_overflow_flag, trim_pct_val, now_ts, subtitle_mode))
     except Exception:
         shutil.rmtree(p)
         raise
@@ -351,8 +372,12 @@ def edit(pid: str, body: Edit):
     new_voice = body.voice.strip()
     multi = row.get('multi_speaker', 0)
     segs_to_write = []
+    old_by_id = {s['id']: s for s in old}
     for s in body.segments:
-        s_dict = s.model_dump()
+        # Preserve STT provenance and reference decisions across editor saves.
+        s_dict = {**old_by_id[s.id], **s.model_dump()}
+        if s.translation != old_by_id[s.id].get('translation') and s_dict.get('reference', {}).get('vi'):
+            s_dict['reference']['vi']['edited'] = True
         if not multi:
             s_dict['voice'] = new_voice
         segs_to_write.append(s_dict)
@@ -519,7 +544,7 @@ def action(pid: str, action: str):
                     break
         p_dir = folder(pid)
         for item in p_dir.iterdir():
-            if item.name == 'source':
+            if item.name in ('source', 'subtitle-references.json', 'uploaded-source.srt', 'uploaded-vi.srt'):
                 continue
             if item.is_dir():
                 shutil.rmtree(item, ignore_errors=True)

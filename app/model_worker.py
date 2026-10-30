@@ -241,6 +241,8 @@ def transcribe(pid, model=None):
             s['voice'] = default_voice
 
     write_json(p / 'segments.json', normalized)
+    # Immutable STT text/timeline for auditing reference corrections.
+    write_json(p / 'stt-original.json', normalized)
 
 
 def load_tts():

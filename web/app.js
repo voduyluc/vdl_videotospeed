@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let selected = null, current = null, dirty = false, page = 0, busy = false, filterWarnings = false;
+let selected = null, current = null, dirty = false, page = 0, busy = false, filterWarnings = false, filterReferences = false;
 let uploadQueue = [];
 function countWords(s){ return (s||'').trim().split(/\s+/).filter(Boolean).length; }
 const drafts = new Map();
@@ -295,11 +295,17 @@ const I18N = {
     uploadQueueMultipleNotice: "Đang tải lên {0} video trong nền...",
     btnAddMoreVideos: "➕ Thêm video khác",
     uploadSubHeading: "📝 Tải lên phụ đề có sẵn (Tùy chọn)",
-    uploadSubHint: "Nếu đã có file phụ đề (.srt), hệ thống sẽ bỏ qua bước trích xuất stt chỉ trích xuất âm thanh để làm nền.",
+    uploadSubHint: "Dùng trực tiếp lấy timeline SRT và bỏ qua STT. Tham chiếu luôn chạy STT để lấy timeline video, chỉ dùng nội dung khớp; phần thiếu tự dịch.",
+    subtitleModeLabel: "Cách sử dụng SRT",
+    subtitleDirect: "Dùng trực tiếp — SRT đã khớp video",
+    subtitleReference: "Tham chiếu nội dung — timeline từ video",
+    referenceReview: "SRT cần kiểm tra",
+    referenceMatched: "Đã dùng SRT",
+    referenceOriginal: "STT / nội dung trước hiệu chỉnh",
     uploadSubSrcLabel: "🌐 Phụ đề tiếng gốc (.srt)",
-    uploadSubSrcHint: "Bỏ qua STT, AI sẽ dịch sang tiếng Việt.",
+    uploadSubSrcHint: "Trực tiếp: thay STT. Tham chiếu: hiệu chỉnh nội dung STT, giữ mốc video.",
     uploadSubViLabel: "🇻🇳 Phụ đề tiếng Việt (.srt)",
-    uploadSubViHint: "Bỏ qua STT & Dịch, vào thẳng bước duyệt tạo Audio.",
+    uploadSubViHint: "Trực tiếp: dùng bản dịch và timeline SRT. Tham chiếu: lấy câu khớp, phần thiếu tự dịch.",
     clearSubBtnTitle: "Xóa file phụ đề đã chọn"
   },
   en: {
@@ -589,11 +595,17 @@ const I18N = {
     uploadQueueMultipleNotice: "Uploading {0} video(s) in background...",
     btnAddMoreVideos: "➕ Add another video",
     uploadSubHeading: "📝 Upload Existing Subtitles (Optional)",
-    uploadSubHint: "If subtitle (.srt) file is provided, STT will be skipped and only background audio will be extracted.",
+    uploadSubHint: "Direct uses SRT timing and skips STT. Reference always runs STT for video timing, reuses matched content and translates missing lines.",
+    subtitleModeLabel: "How to use subtitles",
+    subtitleDirect: "Direct — subtitles already synchronized",
+    subtitleReference: "Content reference — use video timing",
+    referenceReview: "SRT needs review",
+    referenceMatched: "SRT reused",
+    referenceOriginal: "STT / text before correction",
     uploadSubSrcLabel: "🌐 Original Language Subtitle (.srt)",
-    uploadSubSrcHint: "Skips STT, AI will translate into Vietnamese.",
+    uploadSubSrcHint: "Direct: replaces STT. Reference: corrects STT text while keeping video timestamps.",
     uploadSubViLabel: "🇻🇳 Vietnamese Subtitle (.srt)",
-    uploadSubViHint: "Skips STT & Translate, goes straight to review to generate Audio.",
+    uploadSubViHint: "Direct: uses SRT translation and timing. Reference: reuses matched lines, translates gaps.",
     clearSubBtnTitle: "Remove selected subtitle file"
   }
 };
@@ -979,6 +991,15 @@ function renderSegments(container, editable, warningsMap, list){
     const row = el('div', undefined, 'segment' + (w ? ' warning' : ''));
     
     const actions = el('div');
+    if(s.reference){
+      const decisions=Object.entries(s.reference);
+      const badge=el('div',t(decisions.some(([,r])=>r.status!=='matched')?'referenceReview':'referenceMatched'),'hint');
+      badge.title=decisions.map(([kind,r])=>`${kind}: ${r.status} · ${(r.reference_ids||[]).join(', ')} · ${r.reason||''}`).join('\n');
+      actions.append(badge);
+      if(s.reference.source?.original_text){
+        const original=el('details');original.append(el('summary',t('referenceOriginal')),el('p',s.reference.source.original_text));actions.append(original);
+      }
+    }
     const tBtn = el('button', `${time(s.start)} → ${time(s.end)}`, 'time secondary');
     tBtn.onclick = () => { stopPreview(); $('video').currentTime = s.start; };
     actions.append(tBtn);
@@ -1691,6 +1712,7 @@ function render(){
   const hLeft=el('div',undefined,'heading-left');
   const langPill = el('span', t('badge_' + p.source_language) || (p.source_language || 'ko').toUpperCase(), 'badge-lang');
   hLeft.append(el('h2',p.name),el('span',getStatusLabel(p.state)||p.state,'status'), langPill);
+  if(p.subtitle_mode==='reference')hLeft.append(el('span',t('subtitleReference'),'hint'));
   if(p.multi_speaker){
     hLeft.append(el('span', t('badgeMultiSpeaker'), 'badge-multi-speaker'));
   }
@@ -1918,6 +1940,7 @@ function render(){
     const rows=el('div',undefined,'segments');
 
     function getVisibleSegments(){
+      if(filterReferences) return p.segments.filter(s=>Object.values(s.reference||{}).some(r=>r.status!=='matched'));
       if (!filterWarnings) return p.segments;
       return p.segments.filter(s => isSegmentOver(s, warnRatioThreshold));
     }
@@ -1927,8 +1950,9 @@ function render(){
       const maxPage = Math.max(1, Math.ceil(list.length / 40));
       page = Math.max(0, Math.min(page, maxPage - 1));
 
-      allTab.className = 'tab-btn' + (!filterWarnings ? ' active' : '');
-      warnTab.className = 'tab-btn warning-tab' + (filterWarnings ? ' active' : '');
+      allTab.className = 'tab-btn' + (!filterWarnings&&!filterReferences ? ' active' : '');
+      warnTab.className = 'tab-btn warning-tab' + (filterWarnings&&!filterReferences ? ' active' : '');
+      if(refTab) refTab.className='tab-btn'+(filterReferences?' active':'');
 
       const totalMatchingWarns = p.segments.filter(s => isSegmentOver(s, warnRatioThreshold)).length;
       warnTab.textContent = t('tabWarning', totalMatchingWarns);
@@ -1964,8 +1988,11 @@ function render(){
       renderSegments(rows, editable, warningsMap, list);
     }
 
-    allTab.onclick = () => { filterWarnings = false; page = 0; show(); };
-    warnTab.onclick = () => { filterWarnings = true; page = 0; show(); };
+    const refTab=p.subtitle_mode==='reference'?el('button',`${t('referenceReview')} (${p.segments.filter(s=>Object.values(s.reference||{}).some(r=>r.status!=='matched')).length})`,'tab-btn'):null;
+    if(refTab){filterTabs.append(refTab);refTab.onclick=()=>{filterReferences=true;filterWarnings=false;page=0;show();};}
+    else filterReferences=false;
+    allTab.onclick = () => { filterReferences=false; filterWarnings = false; page = 0; show(); };
+    warnTab.onclick = () => { filterReferences=false; filterWarnings = true; page = 0; show(); };
 
     prev.onclick=()=>{page--;show();};next.onclick=()=>{page++;show();};pages.append(prev,counter,next);w.append(pages,rows);show();
   }
@@ -2361,6 +2388,7 @@ async function openProjectModal(mode, p = null) {
     $('#modalFileGroup').hidden = false;
     $('#modalFileInput').value = '';
     if ($('#modalSubGroup')) $('#modalSubGroup').hidden = false;
+    $('#modalSubtitleMode').value='direct';
     if ($('#modalSubSrcInput')) $('#modalSubSrcInput').value = '';
     if ($('#modalSubViInput')) $('#modalSubViInput').value = '';
     if ($('#modalClearSubSrcBtn')) $('#modalClearSubSrcBtn').hidden = true;
@@ -2494,6 +2522,7 @@ async function handleModalSubmit() {
     const form = new FormData();
     form.append('file', file);
     form.append('source_language', $('#modalSourceLang').value || 'ko');
+    form.append('subtitle_mode', $('#modalSubtitleMode').value || 'direct');
     form.append('multi_speaker', isMulti ? '1' : '0');
     form.append('voice_male', voiceMale);
     form.append('voice_female', voiceFemale);

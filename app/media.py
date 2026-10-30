@@ -41,7 +41,8 @@ def extract(pid):
         if not read_json(p / 'segments.json', []):
             update(pid, duration=dur)
             raise RuntimeError('Video không có track âm thanh nên không thể nhận dạng lời thoại. '
-                               'Hãy tạo lại dự án và tải lên file phụ đề .srt (tiếng gốc hoặc tiếng Việt).')
+                               'Hãy tạo lại dự án và tải lên file phụ đề .srt ở chế độ Dùng trực tiếp. '
+                               'Chế độ Tham chiếu cần audio có lời nói để lấy timeline video.')
 
     update(pid, duration=total if total and total > 0 else wav_duration(p / 'stt.wav'))
 

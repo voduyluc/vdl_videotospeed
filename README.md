@@ -79,6 +79,23 @@ Uninstall không gỡ CUDA, driver hoặc apt package dùng chung; không xóa v
 
 Nút **Nghe thử** bên cạnh mỗi câu phát audio TTS đã tạo cho câu đó; bấm **Dừng** để ngắt. Nếu chưa có audio hoặc bản dịch/giọng đã thay đổi, cần tạo lại trước khi nghe. Chỉ phát một đoạn nghe thử tại một thời điểm.
 
+### SRT trực tiếp hoặc tham chiếu nội dung
+
+Khi tạo project có upload SRT, chọn **Cách sử dụng SRT**:
+
+- **Dùng trực tiếp** (mặc định, tương thích project cũ): dùng timestamp SRT và bỏ qua STT. Chỉ nên chọn khi phụ đề đã khớp video. Nếu có cả hai file, chế độ cũ ghép nội dung theo thứ tự dòng nên cần hai file tương ứng nhau.
+- **Tham chiếu nội dung**: luôn chạy STT từ audio video. ID, timestamp và thông tin người nói của STT là chuẩn; timestamp của SRT upload không được ghi đè vào timeline. SRT nguồn giúp hiệu chỉnh text STT; SRT Việt cung cấp các câu dịch có thể tái sử dụng. Phần không khớp được tự dịch; nếu dịch thất bại thì báo lỗi để retry, không coi lời thoại nguồn là tiếng Việt.
+
+Chế độ tham chiếu dùng thuật toán tìm ứng viên văn bản trên CPU và **Qwen đang có**, không tải thêm model. Khớp nguồn giống hệt, đủ dài và không mơ hồ có thể dùng trực tiếp. Trường hợp khó hoặc xuyên ngôn ngữ được Qwen xác nhận theo cửa sổ nhỏ. Với SRT Việt, Qwen tạo cụm từ tìm kiếm tiếng Việt trước để tìm ứng viên trên toàn phụ đề; đây là nội dung phục vụ tìm kiếm, không phải bản dịch hoàn chỉnh dùng cho TTS. Sau matching chỉ dịch các đoạn còn thiếu. Matching và dịch dùng chung một lần nạp Qwen, kể cả ở chế độ hàng đợi theo stage.
+
+Hỗ trợ các nhóm liên tiếp tối đa 3 câu STT / 3 cue SRT, số dòng hai file không cần bằng nhau. Giữ thứ tự đối thoại, không dùng lại cùng cue cho các nhóm độc lập, loại các câu lặp có nhiều vị trí khả dĩ. Đối thoại quá ngắn, cue quá dài hoặc không có ứng viên rõ sẽ giữ STT/tự dịch. Không có bảo đảm khớp toàn bộ khi khác bản dựng, lời dịch quá thoát ý hoặc STT nhận sai nặng. Điểm do LLM trả về chỉ là tín hiệu sàng lọc, không phải xác suất đã được hiệu chuẩn; cần nghe kiểm tra các đoạn quan trọng.
+
+Trong editor, nhãn **Đã dùng SRT / SRT cần kiểm tra** cho biết kết quả; rê chuột để xem cue được dùng và lý do, mở **STT / nội dung trước hiệu chỉnh** để đối chiếu. Tab **SRT cần kiểm tra** lọc các đoạn không khớp hoặc không chắc chắn. Các đoạn này vẫn có thể đã được tự dịch thành công. Chỉnh sửa thủ công giữ lịch sử tham chiếu.
+
+File upload giới hạn 5 MB mỗi SRT, phải có ít nhất một cue hợp lệ. Dữ liệu project lưu `uploaded-source.srt`, `uploaded-vi.srt`, `subtitle-references.json`, bản STT thô `stt-original.json` và checkpoint matching trong `reference-run.json` / `segments.json`. Retry giữ quyết định từng batch và cache cụm từ tìm kiếm; nếu đổi file tham chiếu hoặc timeline thì cần reset/tạo project mới. **Chạy lại từ đầu** giữ file tham chiếu nhưng xóa kết quả matching để làm lại. Project không có audio/lời nói không dùng được chế độ tham chiếu; hãy chọn dùng SRT trực tiếp.
+
+Sau cập nhật, restart worker/web để migration SQLite thêm `subtitle_mode`, mặc định `direct` cho project cũ. Kiểm thử matching dùng mock Qwen; chất lượng đối chiếu thực tế cần thử với phụ đề/video trên server GPU.
+
 Audio xuất có timeline bắt đầu từ 0, gồm khoảng lặng và lời Việt. Hệ thống sử dụng khoảng trống trước câu kế tiếp và tăng tốc tối đa `MAX_SPEED`, mặc định 1.18. Không cắt lời để ép vừa thời gian. Nếu vẫn tràn, không xuất bản audio bị lệch; hiện cần sửa thủ công, chưa có vòng LLM tự rút gọn.
 
 Browser preview dùng video gốc. MP4 H.264/AAC tương thích phổ biến; MKV/HEVC hoặc codec trình duyệt không hỗ trợ vẫn có thể xử lý audio nhưng cần chuyển video sang MP4 để xem trực tiếp. Không xuất video ghép, không tách nhạc nền, không nhận diện người nói hay clone giọng trong MVP.

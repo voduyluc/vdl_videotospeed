@@ -52,6 +52,8 @@ def init_db():
             trim_threshold_pct INTEGER DEFAULT 120,
             sort_order REAL DEFAULT 0)''')
         cols = [r['name'] for r in c.execute('PRAGMA table_info(projects)')]
+        if 'subtitle_mode' not in cols:
+            c.execute("ALTER TABLE projects ADD COLUMN subtitle_mode TEXT NOT NULL DEFAULT 'direct'")
         if 'pause_review' not in cols:
             c.execute('ALTER TABLE projects ADD COLUMN pause_review INTEGER DEFAULT 1')
         if 'auto_fit' not in cols:
