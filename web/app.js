@@ -146,6 +146,8 @@ const I18N = {
     mixRemixErr: "Lỗi remix: ",
     deleteProjectBtn: "🗑️ Xóa dự án",
     deleteProjectBtnTitle: "Xóa dự án và dọn sạch toàn bộ file",
+    moreActionsBtn: "Tuỳ chọn",
+    moreActionsTitle: "Các thao tác khác",
     voiceLabelToolbar: "Giọng đọc: ",
     pauseReviewShort: "Dừng để duyệt",
     autoFitShort: "Tự nén âm thanh vừa thời gian",
@@ -446,6 +448,8 @@ const I18N = {
     mixRemixErr: "Remix error: ",
     deleteProjectBtn: "🗑️ Delete Project",
     deleteProjectBtnTitle: "Delete project and clear all files",
+    moreActionsBtn: "Options",
+    moreActionsTitle: "More actions",
     voiceLabelToolbar: "Voice: ",
     pauseReviewShort: "Pause for review",
     autoFitShort: "Auto-fit audio duration",
@@ -940,6 +944,69 @@ function buildVoiceSelect(currentVoice){
 
 function el(tag, text, cls) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(cls)e.className=cls; return e; }
 function toast(message) { $('#toast').textContent=message; $('#toast').style.display='block'; setTimeout(()=>$('#toast').style.display='none',6000); }
+
+// ===== Action menu: gom nhóm nhiều nút ở phía phải thành pulldown menu =====
+function buildActionMenu(items, label){
+  const menu = el('div', undefined, 'action-menu');
+  const toggle = el('button', undefined, 'action-menu-toggle');
+  toggle.type = 'button';
+  toggle.title = t('moreActionsTitle');
+  toggle.setAttribute('aria-haspopup', 'true');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.append(el('span', '⋯', 'action-menu-dots'), el('span', label || t('moreActionsBtn'), 'action-menu-toggle-label'));
+  const panel = el('div', undefined, 'action-menu-panel');
+  panel.setAttribute('role', 'menu');
+  items.filter(Boolean).forEach(it => panel.append(it));
+  menu.append(toggle, panel);
+  syncActionMenu(menu);
+  return menu;
+}
+
+function syncActionMenu(menu){
+  const count = menu.querySelectorAll(':scope > .action-menu-panel > *').length;
+  // "Nhiều" nút (từ 3 trở lên) luôn thu lại thành pulldown;
+  // ít nút hơn chỉ thu lại khi màn hình hẹp (mobile) để tránh tràn ngang.
+  const collapsed = count >= 3 || (count >= 2 && window.innerWidth <= 850);
+  menu.classList.toggle('collapsed', collapsed);
+  if(!collapsed) closeActionMenu(menu);
+}
+
+function closeActionMenu(menu){
+  menu.classList.remove('open');
+  const tg = menu.querySelector('.action-menu-toggle');
+  if(tg) tg.setAttribute('aria-expanded', 'false');
+}
+
+function syncAllActionMenus(){
+  document.querySelectorAll('.action-menu').forEach(syncActionMenu);
+}
+
+document.addEventListener('click', (e) => {
+  const toggle = e.target.closest && e.target.closest('.action-menu-toggle');
+  if(toggle){
+    e.preventDefault();
+    const menu = toggle.closest('.action-menu');
+    const open = menu.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.querySelectorAll('.action-menu.open').forEach(m => { if(m !== menu) closeActionMenu(m); });
+    return;
+  }
+  const inPanel = e.target.closest && e.target.closest('.action-menu-panel');
+  if(inPanel && e.target.closest('button, a, label')){
+    const menu = inPanel.closest('.action-menu');
+    if(menu) closeActionMenu(menu);
+    return;
+  }
+  document.querySelectorAll('.action-menu.open').forEach(m => { if(!m.contains(e.target)) closeActionMenu(m); });
+});
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') document.querySelectorAll('.action-menu.open').forEach(closeActionMenu);
+});
+let actionMenuResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(actionMenuResizeTimer);
+  actionMenuResizeTimer = setTimeout(syncAllActionMenus, 150);
+});
 async function api(path, options={}) {
   const url = '/api' + path + (path.includes('?') ? '&' : '?') + '_=' + Date.now();
   const controller = new AbortController();
@@ -1469,7 +1536,7 @@ function renderDownloadSection(p){
     muxActionBtn.style.fontSize = '12px';
     muxActionBtn.style.padding = '6px 14px';
     muxActionBtn.onclick = () => act('mux');
-    hActions.append(muxActionBtn);
+    hActions.append(buildActionMenu([muxActionBtn]));
   }
   header.append(hActions);
   card.append(header);
@@ -1504,7 +1571,7 @@ function renderDownloadSection(p){
     }
     verSelect.onchange = (e) => {
       window.selectedProjectVersion[p.id] = e.target.value;
-      renderWorkspace();
+      render();
     };
 
     verLeft.append(verLabel, verSelect);
@@ -1543,7 +1610,7 @@ function renderDownloadSection(p){
       verActions.append(watchBtn);
     }
     if(verActions.children.length > 0){
-      verBar.append(verActions);
+      verBar.append(buildActionMenu(Array.from(verActions.children)));
     }
     card.append(verBar);
   }
@@ -1738,7 +1805,7 @@ function render(){
   const delMainBtn=el('button',t('deleteProjectBtn'),'btn-danger secondary');
   delMainBtn.title=t('deleteProjectBtnTitle');
   delMainBtn.onclick=()=>deleteProject(p);
-  hActions.append(settingsBtn, resetBtn, delMainBtn);
+  hActions.append(buildActionMenu([settingsBtn, resetBtn, delMainBtn]));
   heading.append(hActions);
   w.append(heading);
 
@@ -3266,6 +3333,7 @@ initLanguageSwitch();
 initProjectModal();
 initUsageModal();
 initVoiceModal();
+syncAllActionMenus();
 refresh();
 setInterval(() => refresh(), 3000);
 setInterval(updateLiveTiming, 1000);

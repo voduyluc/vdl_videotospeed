@@ -15,8 +15,13 @@
         <option value="en">🇬🇧 English</option>
       </select>
     </div>
-    <button id="voiceLibBtn" class="usage-btn" data-i18n-title="voiceLibTitle"><span data-i18n="voiceLibBtn">🎙️ Giọng Clone</span></button>
-    <button id="usageBtn" class="usage-btn" data-i18n-title="usageBtnTitle"><span data-i18n="usageBtn">📊 Tài nguyên / Usage</span></button>
+    <div class="action-menu">
+      <button type="button" class="action-menu-toggle" aria-haspopup="true" aria-expanded="false" data-i18n-title="moreActionsTitle"><span class="action-menu-dots">⋯</span><span class="action-menu-toggle-label" data-i18n="moreActionsBtn">Tuỳ chọn</span></button>
+      <div class="action-menu-panel" role="menu">
+        <button id="voiceLibBtn" class="usage-btn" data-i18n-title="voiceLibTitle"><span data-i18n="voiceLibBtn">🎙️ Giọng Clone</span></button>
+        <button id="usageBtn" class="usage-btn" data-i18n-title="usageBtnTitle"><span data-i18n="usageBtn">📊 Tài nguyên / Usage</span></button>
+      </div>
+    </div>
   </div>
 </header>
 <main>
